@@ -1,5 +1,10 @@
 {
   "version": 2,
+  "functions": {
+    "server.js": {
+      "runtime": "vercel-node@latest"
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/server.js" },
     { "source": "/(.*)", "destination": "/index.html" }
