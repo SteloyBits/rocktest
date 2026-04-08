@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>News Stories</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; background: #fff; color: #111; }
+    a { color: inherit; text-decoration: none; }
+    header { padding: 1rem; border-bottom: 1px solid #e5e5e5; background: #fff; position: sticky; top: 0; z-index: 10; }
+    .container { max-width: 1000px; margin: 0 auto; padding: 0 1rem; }
+    main { max-width: 1000px; margin: 0 auto; padding: 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.2rem; }
+    .card { border: 1px solid #e8e8e8; border-radius: 10px; overflow: hidden; background: #fff; transition: box-shadow .2s ease, transform .02s ease; }
+    .card:hover { box-shadow: 0 4px 18px rgba(0,0,0,0.06); }
+    .thumb { width: 100%; height: 160px; object-fit: cover; display: block; background: #f2f2f2; }
+    .content { padding: 1rem; }
+    .title { margin: 0 0 .4rem; font-size: 1.15rem; line-height: 1.3; }
+    .excerpt { color: #444; font-size: .95rem; margin: .4rem 0 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .tags { color: #666; font-size: .85rem; margin-top: .4rem; }
+    .chip { display: inline-block; background: #f5f7fa; color: #333; border: 1px solid #e7ebf0; border-radius: 999px; padding: .15rem .6rem; margin-right: .4rem; margin-bottom: .4rem; font-size: .8rem; }
+    .empty { text-align: center; padding: 3rem 1rem; color: #666; }
+    .detail { max-width: 800px; margin: 0 auto; }
+    .detail h1 { margin: .5rem 0 0.75rem; font-size: 2rem; line-height: 1.2; }
+    .detail .hero { width: 100%; max-height: 420px; object-fit: cover; border-radius: 8px; background: #f2f2f2; }
+    .detail .body { font-size: 1.05rem; color: #222; margin-top: 1.5rem; }
+    .detail .body h1, .detail .body h2, .detail .body h3 { margin-top: 1.5rem; margin-bottom: 0.75rem; }
+    .detail .body p { margin-bottom: 1rem; }
+    .detail .body ul, .detail .body ol { margin-bottom: 1rem; padding-left: 1.5rem; }
+    .detail .body li { margin-bottom: 0.5rem; }
+    .detail .body blockquote { border-left: 4px solid #e5e5e5; padding-left: 1rem; margin-left: 0; color: #666; font-style: italic; }
+    .detail .body img { max-width: 100%; height: auto; border-radius: 4px; }
+    .detail .body code { background: #f5f7fa; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; }
+    .detail .body pre { background: #f5f7fa; padding: 1rem; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; }
+    .back { display: inline-block; margin: .2rem 0 1rem; color: #0a58ca; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>News Stories</h1>
+    </div>
+  </header>
+  <main>
+    <div id="list-view">
+      <div id="list" class="grid"></div>
+      <div id="empty" class="empty" hidden>No stories yet.</div>
+    </div>
+    <div id="detail-view" class="detail" hidden>
+      <a id="back-link" class="back" href="#/">← Back to stories</a>
+      <h1 id="d-title"></h1>
+      <div id="d-tags"></div>
+      <img id="d-image" class="hero" alt="">
+      <div id="d-body" class="body"></div>
+      <div id="pager" class="pager">
+        <a id="prev-link" class="pager-link" href="#/" aria-disabled="true">Previous story</a>
+        <a id="next-link" class="pager-link" href="#/" aria-disabled="true">Next story</a>
+      </div>
+    </div>
+  </main>
+  <script>
+    let cachedStories = null;
+    function showListView() {
+      document.getElementById('list-view').hidden = false;
+      document.getElementById('detail-view').hidden = true;
+    }
+    function showDetailView() {
+      document.getElementById('list-view').hidden = true;
+      document.getElementById('detail-view').hidden = false;
+    }
+    function buildCard(s) {
+      const a = document.createElement('a');
+      a.href = '#/story/' + encodeURIComponent(s.slug || '');
+      const card = document.createElement('article');
+      card.className = 'card';
+      const img = document.createElement('img');
+      img.className = 'thumb';
+      if (s.image_url) {
+        img.src = s.image_url;
+        img.alt = s.excerpt || s.headline || 'story image';
+      } else {
+        img.alt = 'no image';
+        img.style.display = 'none';
+      }
+      const content = document.createElement('div');
+      content.className = 'content';
+      const h2 = document.createElement('div');
+      h2.className = 'title';
+      h2.textContent = s.headline || '';
+      const tags = document.createElement('div');
+      tags.className = 'tags';
+      if (Array.isArray(s.tags) && s.tags.length > 0) {
+        tags.textContent = s.tags.join(' · ');
+      } else {
+        tags.textContent = '';
+      }
+      const excerpt = document.createElement('div');
+      excerpt.className = 'excerpt';
+      let ex = s.excerpt && s.excerpt.trim() ? s.excerpt : (s.body || '').slice(0, 200);
+      // Basic markdown strip for excerpt
+      ex = ex.replace(/[#*`_\[\]()]/g, '');
+      excerpt.textContent = ex;
+      content.appendChild(h2);
+      content.appendChild(excerpt);
+      content.appendChild(tags);
+      card.appendChild(img);
+      card.appendChild(content);
+      a.appendChild(card);
+      return a;
+    }
+    async function loadStories() {
+      const list = document.getElementById('list');
+      const empty = document.getElementById('empty');
+      list.innerHTML = '';
+      try {
+        if (!cachedStories) {
+          const res = await fetch('/api/stories');
+          if (!res.ok) throw new Error('Failed to load stories');
+          cachedStories = await res.json();
+        }
+        const items = Array.isArray(cachedStories) ? cachedStories : [];
+        if (items.length === 0) {
+          empty.hidden = false;
+          return;
+        }
+        empty.hidden = true;
+        for (const s of items) {
+          list.appendChild(buildCard(s));
+        }
+      } catch (e) {
+        empty.hidden = false;
+        empty.textContent = 'Failed to load stories.';
+      }
+    }
+    async function loadStory(slug) {
+      try {
+        const res = await fetch('/api/stories/' + encodeURIComponent(slug));
+        if (!res.ok) throw new Error('Not found');
+        const s = await res.json();
+        document.getElementById('d-title').textContent = s.headline || '';
+        const tagsWrap = document.getElementById('d-tags');
+        tagsWrap.innerHTML = 'tags: ';
+        if (Array.isArray(s.tags)) {
+          for (const t of s.tags) {
+            const el = document.createElement('span');
+            el.className = 'chip';
+            el.textContent = t;
+            tagsWrap.appendChild(el);
+          }
+        }
+        const img = document.getElementById('d-image');
+        if (s.image_url) {
+          // const fixedUrl = String(s.image_url).replace('download', 'view');
+          img.src = s.image_url;
+          // img.src = "https://drive.google.com/uc?id=1U51LlSL2XaSrE_2Q12-tO_PAgEFWgX79&export=download"
+          img.alt = s.excerpt || s.headline || 'story image';
+          img.style.display = '';
+        } else {
+          img.removeAttribute('src');
+          img.alt = '';
+          img.style.display = 'none';
+        }
+        const bodyEl = document.getElementById('d-body');
+        if (typeof marked !== 'undefined') {
+          bodyEl.innerHTML = marked.parse(s.body || '');
+        } else {
+          bodyEl.textContent = s.body || '';
+          bodyEl.style.whiteSpace = 'pre-wrap';
+        }
+        if (!cachedStories) {
+          try {
+            const resAll = await fetch('/api/stories');
+            if (resAll.ok) {
+              cachedStories = await resAll.json();
+            }
+          } catch {}
+        }
+        const prevLink = document.getElementById('prev-link');
+        const nextLink = document.getElementById('next-link');
+        let prev = null, next = null;
+        if (Array.isArray(cachedStories)) {
+          const idx = cachedStories.findIndex((x) => (x.slug || '') === (s.slug || ''));
+          if (idx !== -1) {
+            prev = idx < cachedStories.length - 1 ? cachedStories[idx + 1] : null;
+            next = idx > 0 ? cachedStories[idx - 1] : null;
+          }
+        }
+        if (prev && prev.slug) {
+          prevLink.href = '#/story/' + encodeURIComponent(prev.slug);
+          prevLink.setAttribute('aria-disabled', 'false');
+        } else {
+          prevLink.href = '#/';
+          prevLink.setAttribute('aria-disabled', 'true');
+        }
+        if (next && next.slug) {
+          nextLink.href = '#/story/' + encodeURIComponent(next.slug);
+          nextLink.setAttribute('aria-disabled', 'false');
+        } else {
+          nextLink.href = '#/';
+          nextLink.setAttribute('aria-disabled', 'true');
+        }
+        showDetailView();
+      } catch (e) {
+        location.hash = '#/';
+      }
+    }
+    function router() {
+      const hash = location.hash || '#/';
+      if (hash.startsWith('#/story/')) {
+        const slug = decodeURIComponent(hash.slice('#/story/'.length));
+        loadStory(slug);
+      } else {
+        showListView();
+        loadStories();
+      }
+    }
+    window.addEventListener('hashchange', router);
+    router();
+  </script>
+</body>
+</html>
