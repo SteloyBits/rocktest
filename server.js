@@ -1,4 +1,4 @@
-const http = require('http');
+import http from 'node:http';
 const fs = require('fs');
 const path = require('path');
 
