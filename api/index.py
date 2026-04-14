@@ -12,16 +12,17 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
-
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 app = Flask(__name__, static_folder='..')
 CORS(app)
+
+def get_supabase_client():
+    SUPABASE_URL = os.environ.get('SUPABASE_URL')
+    SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+    
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
+    
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def generate_id():
     now_ms = int(time.time() * 1000)
