@@ -84,19 +84,30 @@ def health():
 
 @app.route('/api/stories', methods=['GET'])
 def get_stories():
-    response = supabase.table('stories').select('*').order('created_at', desc=True).execute()
-    return jsonify(response.data)
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table('stories').select('*').order('created_at', desc=True).execute()
+        return jsonify(response.data)
+    except Exception as e:
+        print(f"Error fetching stories: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/stories/<slug>', methods=['GET'])
 def get_story(slug):
-    response = supabase.table('stories').select('*').eq('slug', slug).execute()
-    if not response.data:
-        return jsonify({"error": "Not found"}), 404
-    return jsonify(response.data[0])
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table('stories').select('*').eq('slug', slug).execute()
+        if not response.data:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(response.data[0])
+    except Exception as e:
+        print(f"Error fetching story: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/stories', methods=['POST'])
 def create_story():
     try:
+        supabase = get_supabase_client()
         data = request.get_json()
         if not data:
             return jsonify({"error": "Invalid JSON body"}), 400
@@ -114,30 +125,40 @@ def create_story():
         return jsonify(response.data[0]), 201
     except Exception as e:
         print(f"Error creating story: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/stories', methods=['DELETE'])
 def delete_stories():
-    response = supabase.table('stories').select('id').execute()
-    count = len(response.data)
-    if count > 0:
-        ids = [s['id'] for s in response.data]
-        supabase.table('stories').delete().in_('id', ids).execute()
-    return jsonify({"ok": True, "deleted": count})
+    try:
+        supabase = get_supabase_client()
+        response = supabase.table('stories').select('id').execute()
+        count = len(response.data)
+        if count > 0:
+            ids = [s['id'] for s in response.data]
+            supabase.table('stories').delete().in_('id', ids).execute()
+        return jsonify({"ok": True, "deleted": count})
+    except Exception as e:
+        print(f"Error deleting stories: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/reset', methods=['POST', 'DELETE'])
 def reset_stories():
-    token = request.headers.get('x-admin-token')
-    expected = os.environ.get('ADMIN_TOKEN')
-    if not expected or token != expected:
-        return jsonify({"error": "Forbidden"}), 403
-    
-    response = supabase.table('stories').select('id').execute()
-    count = len(response.data)
-    if count > 0:
-        ids = [s['id'] for s in response.data]
-        supabase.table('stories').delete().in_('id', ids).execute()
-    return jsonify({"ok": True, "deleted": count})
+    try:
+        supabase = get_supabase_client()
+        token = request.headers.get('x-admin-token')
+        expected = os.environ.get('ADMIN_TOKEN')
+        if not expected or token != expected:
+            return jsonify({"error": "Forbidden"}), 403
+        
+        response = supabase.table('stories').select('id').execute()
+        count = len(response.data)
+        if count > 0:
+            ids = [s['id'] for s in response.data]
+            supabase.table('stories').delete().in_('id', ids).execute()
+        return jsonify({"ok": True, "deleted": count})
+    except Exception as e:
+        print(f"Error resetting stories: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3000))
