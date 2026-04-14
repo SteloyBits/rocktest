@@ -12,8 +12,11 @@ from supabase import create_client, Client
 
 load_dotenv()
 
-SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://mruqtwewnzzpafllhktp.supabase.co')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'sb_secret_FQBtUqaajtpyRK97DZ-dfQ_VpbRPtyk')
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
