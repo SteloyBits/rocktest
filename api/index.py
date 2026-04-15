@@ -160,6 +160,33 @@ def reset_stories():
         print(f"Error resetting stories: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/import-json', methods=['POST'])
+def import_json():
+    try:
+        token = request.headers.get('x-admin-token')
+        expected = os.environ.get('ADMIN_TOKEN')
+        if not expected or token != expected:
+            return jsonify({"error": "Forbidden"}), 403
+
+        data_path = os.path.join(os.path.dirname(__file__), '..', 'data.json')
+        if not os.path.exists(data_path):
+            return jsonify({"error": "data.json not found"}), 404
+
+        with open(data_path, 'r', encoding='utf-8') as f:
+            stories_to_import = json.load(f)
+
+        if not isinstance(stories_to_import, list):
+            return jsonify({"error": "Invalid data.json format"}), 400
+
+        supabase = get_supabase_client()
+        # Use upsert to avoid duplicates if run multiple times
+        response = supabase.table('stories').upsert(stories_to_import).execute()
+        
+        return jsonify({"ok": True, "imported": len(response.data)})
+    except Exception as e:
+        print(f"Error importing stories: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3000))
     app.run(host='0.0.0.0', port=port)
