@@ -83,10 +83,23 @@ def health():
     return jsonify({"ok": True})
 
 @app.route('/api/stories', methods=['GET'])
-def get_stories():
+def get_stories(top_n: int|None = None) -> dict:
     try:
         supabase = get_supabase_client()
-        response = supabase.table('stories').select('*').order('created_at', desc=True).execute()
+        # Extract optional top_n from query params, default to None (return all)
+        top_n_param = request.args.get('top_n')
+        if top_n_param is not None:
+            try:
+                top_n = int(top_n_param)
+            except ValueError:
+                top_n = None  # fallback to all if invalid
+        else:
+            top_n = None  # return all if empty
+
+        query = supabase.table('stories').select('*').order('created_at', desc=True)
+        if top_n is not None:
+            query = query.limit(top_n)
+        response = query.execute()
         return jsonify(response.data)
     except Exception as e:
         print(f"Error fetching stories: {e}")
