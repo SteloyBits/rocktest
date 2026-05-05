@@ -4,7 +4,7 @@ import time
 import random
 import string
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -56,7 +56,7 @@ def normalize_story(input_data):
         slug = re.sub(r'\s+', '-', slug)
         slug = re.sub(r'[^a-z0-9\-]', '', slug)
 
-    now = datetime.now(datetime.timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     return {
         "id": generate_id(),
