@@ -56,11 +56,10 @@ def normalize_story(input_data):
         slug = re.sub(r'\s+', '-', slug)
         slug = re.sub(r'[^a-z0-9\-]', '', slug)
 
-    now = datetime.now(timezone.utc).isoformat()
+    # now = datetime.now(timezone.utc).isoformat()
     
     return {
         "id": generate_id(),
-        "created_at": now,
         "headline": headline,
         "body": body,
         "excerpt": excerpt,
