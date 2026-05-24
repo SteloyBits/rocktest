@@ -63,6 +63,20 @@
   </main>
   <script>
     let cachedStories = null;
+    async function fetchStoriesData() {
+      const sources = ['/api/stories', 'data.json'];
+      for (const url of sources) {
+        try {
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            return data;
+          }
+        } catch (e) {}
+      }
+      return [];
+    }
     function showListView() {
       document.getElementById('list-view').hidden = false;
       document.getElementById('detail-view').hidden = true;
@@ -117,9 +131,7 @@
       list.innerHTML = '';
       try {
         if (!cachedStories) {
-          const res = await fetch('/api/stories');
-          if (!res.ok) throw new Error('Failed to load stories');
-          cachedStories = await res.json();
+          cachedStories = await fetchStoriesData();
         }
         const items = Array.isArray(cachedStories) ? cachedStories : [];
         if (items.length === 0) {
@@ -137,9 +149,24 @@
     }
     async function loadStory(slug) {
       try {
-        const res = await fetch('/api/stories/' + encodeURIComponent(slug));
-        if (!res.ok) throw new Error('Not found');
-        const s = await res.json();
+        let s = null;
+        try {
+          const res = await fetch('/api/stories/' + encodeURIComponent(slug), { cache: 'no-store' });
+          if (res.ok) {
+            s = await res.json();
+          }
+        } catch (e) {}
+
+        if (!s) {
+          if (!cachedStories) {
+            cachedStories = await fetchStoriesData();
+          }
+          s = Array.isArray(cachedStories)
+            ? cachedStories.find((item) => (item.slug || '') === (slug || ''))
+            : null;
+        }
+
+        if (!s) throw new Error('Not found');
         document.getElementById('d-title').textContent = s.headline || '';
         const tagsWrap = document.getElementById('d-tags');
         tagsWrap.innerHTML = 'tags: ';
@@ -172,10 +199,7 @@
         }
         if (!cachedStories) {
           try {
-            const resAll = await fetch('/api/stories');
-            if (resAll.ok) {
-              cachedStories = await resAll.json();
-            }
+            cachedStories = await fetchStoriesData();
           } catch {}
         }
         const prevLink = document.getElementById('prev-link');
