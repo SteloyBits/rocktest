@@ -132,44 +132,94 @@ def get_stories(top_n: int = None) -> dict:
 
         stories = response.data or []
 
-        # If filters specified (other than popular) apply server-side matching.
-        def matches_filters(story, filters_list):
-            if not filters_list:
-                return True
-            cat = str(story.get('category', '')).lower()
-            tags_val = story.get('tags') or []
-            normalized_tags = []
-            if isinstance(tags_val, list):
-                for t in tags_val:
-                    if not isinstance(t, str):
-                        continue
-                    for part in [p.strip() for p in t.split(',') if p.strip()]:
-                        normalized_tags.append(part.lower())
-            elif isinstance(tags_val, str):
-                normalized_tags = [p.strip().lower() for p in tags_val.split(',') if p.strip()]
-
-            for f in filters_list:
-                if f == cat:
-                    return True
-                # match tag substrings (e.g., "nollywood" in a tag list)
-                for t in normalized_tags:
-                    if f in t:
-                        return True
-            return False
-
+        # If filters specified, prefer DB-level filtering per-filter (category eq OR tags contains).
         if filters:
-            filtered = [s for s in stories if matches_filters(s, filters)]
-        else:
-            filtered = stories
+            collected = []
+            seen_ids = set()
+            for f in filters:
+                # try category match
+                try:
+                    q_cat = supabase.table('stories').select('*').eq('category', f)
+                    if sort_by_popular:
+                        q_cat = q_cat.order('quality_score', desc=True)
+                    else:
+                        q_cat = q_cat.order('created_at', desc=True)
+                    # fetch a reasonable batch
+                    q_cat = q_cat.limit(top_n * 3 if top_n else 100)
+                    resp_cat = q_cat.execute()
+                    for s in (resp_cat.data or []):
+                        sid = s.get('id')
+                        if sid and sid not in seen_ids:
+                            seen_ids.add(sid)
+                            collected.append(s)
+                except Exception:
+                    pass
 
-        # If popular was requested but ordering wasn't done by the DB, ensure sort
-        if 'quality_score' in (response.data[0] if response.data else {}) and sort_by_popular:
-            try:
-                filtered.sort(key=lambda s: (s.get('quality_score') is None, -(s.get('quality_score') or 0)))
-            except Exception:
-                pass
+                # try tags contains (for text[] or json array column)
+                try:
+                    q_tags = supabase.table('stories').select('*').filter('tags', 'cs', [f])
+                    if sort_by_popular:
+                        q_tags = q_tags.order('quality_score', desc=True)
+                    else:
+                        q_tags = q_tags.order('created_at', desc=True)
+                    q_tags = q_tags.limit(top_n * 3 if top_n else 100)
+                    resp_tags = q_tags.execute()
+                    for s in (resp_tags.data or []):
+                        sid = s.get('id')
+                        if sid and sid not in seen_ids:
+                            seen_ids.add(sid)
+                            collected.append(s)
+                except Exception:
+                    # fallback: skip tags DB filter if unsupported
+                    pass
 
-        return jsonify(filtered)
+            # If DB-level collected nothing, fall back to in-memory filtering of the original fetch
+            if not collected:
+                def matches_filters_local(story, filters_list):
+                    if not filters_list:
+                        return True
+                    cat = str(story.get('category', '')).lower()
+                    tags_val = story.get('tags') or []
+                    normalized_tags = []
+                    if isinstance(tags_val, list):
+                        for t in tags_val:
+                            if not isinstance(t, str):
+                                continue
+                            for part in [p.strip() for p in t.split(',') if p.strip()]:
+                                normalized_tags.append(part.lower())
+                    elif isinstance(tags_val, str):
+                        normalized_tags = [p.strip().lower() for p in tags_val.split(',') if p.strip()]
+
+                    for f in filters_list:
+                        if f == cat:
+                            return True
+                        for t in normalized_tags:
+                            if f in t:
+                                return True
+                    return False
+
+                collected = [s for s in stories if matches_filters_local(s, filters)]
+
+            # apply ordering
+            if sort_by_popular:
+                try:
+                    collected.sort(key=lambda s: (s.get('quality_score') is None, -(s.get('quality_score') or 0)))
+                except Exception:
+                    pass
+            else:
+                try:
+                    collected.sort(key=lambda s: s.get('created_at') or '', reverse=True)
+                except Exception:
+                    pass
+
+            # apply final limit
+            if top_n is not None:
+                collected = collected[:top_n]
+
+            return jsonify(collected)
+
+        # no filters: return DB response (possibly limited above)
+        return jsonify(stories)
     except Exception as e:
         print(f"Error fetching stories: {e}")
         return jsonify({"error": str(e)}), 500
