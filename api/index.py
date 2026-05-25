@@ -43,7 +43,20 @@ def normalize_story(input_data):
 
     normalized_tags = []
     if isinstance(tags, list):
-        normalized_tags = [str(t).strip() for t in tags if str(t).strip()]
+        for t in tags:
+            if not isinstance(t, str):
+                continue
+            # support a single list element that contains comma-separated tags
+            parts = [p.strip() for p in t.split(',') if p.strip()]
+            normalized_tags.extend(parts)
+        # de-duplicate while preserving order
+        seen = set()
+        deduped = []
+        for t in normalized_tags:
+            if t not in seen:
+                seen.add(t)
+                deduped.append(t)
+        normalized_tags = deduped
 
     if quality_score is not None:
         try:
@@ -82,7 +95,7 @@ def health():
     return jsonify({"ok": True})
 
 @app.route('/api/stories', methods=['GET'])
-def get_stories(top_n: int|None = None) -> dict:
+def get_stories(top_n: int = None) -> dict:
     try:
         supabase = get_supabase_client()
         # Extract optional top_n from query params, default to None (return all)
@@ -95,11 +108,118 @@ def get_stories(top_n: int|None = None) -> dict:
         else:
             top_n = None  # return all if empty
 
-        query = supabase.table('stories').select('*').order('created_at', desc=True)
+        # Support filters via query param `filters` (comma-separated).
+        # Special filter `popular` sorts by `quality_score` desc.
+        filters_param = request.args.get('filters')
+        filters = []
+        sort_by_popular = False
+        if filters_param:
+            filters = [f.strip().lower() for f in filters_param.split(',') if f.strip()]
+            if 'popular' in filters:
+                sort_by_popular = True
+                filters = [f for f in filters if f != 'popular']
+
+        # Build initial query: order by quality_score if popular, otherwise by created_at
+        if sort_by_popular:
+            query = supabase.table('stories').select('*').order('quality_score', desc=True)
+        else:
+            query = supabase.table('stories').select('*').order('created_at', desc=True)
+
         if top_n is not None:
             query = query.limit(top_n)
+
         response = query.execute()
-        return jsonify(response.data)
+
+        stories = response.data or []
+
+        # If filters specified, prefer DB-level filtering per-filter (category eq OR tags contains).
+        if filters:
+            collected = []
+            seen_ids = set()
+            for f in filters:
+                # try category match
+                try:
+                    q_cat = supabase.table('stories').select('*').eq('category', f)
+                    if sort_by_popular:
+                        q_cat = q_cat.order('quality_score', desc=True)
+                    else:
+                        q_cat = q_cat.order('created_at', desc=True)
+                    # fetch a reasonable batch
+                    q_cat = q_cat.limit(top_n * 3 if top_n else 100)
+                    resp_cat = q_cat.execute()
+                    for s in (resp_cat.data or []):
+                        sid = s.get('id')
+                        if sid and sid not in seen_ids:
+                            seen_ids.add(sid)
+                            collected.append(s)
+                except Exception:
+                    pass
+
+                # try tags contains (for text[] or json array column)
+                try:
+                    q_tags = supabase.table('stories').select('*').filter('tags', 'cs', [f])
+                    if sort_by_popular:
+                        q_tags = q_tags.order('quality_score', desc=True)
+                    else:
+                        q_tags = q_tags.order('created_at', desc=True)
+                    q_tags = q_tags.limit(top_n * 3 if top_n else 100)
+                    resp_tags = q_tags.execute()
+                    for s in (resp_tags.data or []):
+                        sid = s.get('id')
+                        if sid and sid not in seen_ids:
+                            seen_ids.add(sid)
+                            collected.append(s)
+                except Exception:
+                    # fallback: skip tags DB filter if unsupported
+                    pass
+
+            # If DB-level collected nothing, fall back to in-memory filtering of the original fetch
+            if not collected:
+                def matches_filters_local(story, filters_list):
+                    if not filters_list:
+                        return True
+                    cat = str(story.get('category', '')).lower()
+                    tags_val = story.get('tags') or []
+                    normalized_tags = []
+                    if isinstance(tags_val, list):
+                        for t in tags_val:
+                            if not isinstance(t, str):
+                                continue
+                            for part in [p.strip() for p in t.split(',') if p.strip()]:
+                                normalized_tags.append(part.lower())
+                    elif isinstance(tags_val, str):
+                        normalized_tags = [p.strip().lower() for p in tags_val.split(',') if p.strip()]
+
+                    for f in filters_list:
+                        if f == cat:
+                            return True
+                        for t in normalized_tags:
+                            if f in t:
+                                return True
+                    return False
+
+                collected = [s for s in stories if matches_filters_local(s, filters)]
+
+            # apply ordering
+            if sort_by_popular:
+                try:
+                    collected.sort(key=lambda s: (s.get('quality_score') is None, -(s.get('quality_score') or 0)))
+                except Exception:
+                    pass
+            else:
+                try:
+                    collected.sort(key=lambda s: s.get('created_at') or '', reverse=True)
+                except Exception:
+                    pass
+
+            # apply final limit
+            if top_n is not None:
+                collected = collected[:top_n]
+
+            return jsonify(collected)
+
+        # no filters: return DB response (possibly limited above)
+        return jsonify(stories)
     except Exception as e:
         print(f"Error fetching stories: {e}")
         return jsonify({"error": str(e)}), 500
@@ -170,6 +290,52 @@ def reset_stories():
         return jsonify({"ok": True, "deleted": count})
     except Exception as e:
         print(f"Error resetting stories: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/normalize-tags', methods=['POST'])
+def admin_normalize_tags():
+    try:
+        token = request.headers.get('x-admin-token')
+        expected = os.environ.get('ADMIN_TOKEN')
+        if not expected or token != expected:
+            return jsonify({"error": "Forbidden"}), 403
+
+        supabase = get_supabase_client()
+        response = supabase.table('stories').select('id,tags').execute()
+        rows = response.data or []
+        updated = 0
+
+        def normalize_tags_list(tags_val):
+            parts = []
+            if isinstance(tags_val, list):
+                for t in tags_val:
+                    if not isinstance(t, str):
+                        continue
+                    for p in [p.strip() for p in t.split(',') if p.strip()]:
+                        parts.append(p)
+            elif isinstance(tags_val, str):
+                parts = [p.strip() for p in tags_val.split(',') if p.strip()]
+
+            seen = set()
+            out = []
+            for p in parts:
+                if p not in seen:
+                    seen.add(p)
+                    out.append(p)
+            return out
+
+        for r in rows:
+            sid = r.get('id')
+            tags_val = r.get('tags')
+            normalized = normalize_tags_list(tags_val)
+            if normalized != tags_val:
+                supabase.table('stories').update({'tags': normalized}).eq('id', sid).execute()
+                updated += 1
+
+        return jsonify({"ok": True, "updated": updated})
+    except Exception as e:
+        print(f"Error normalizing tags: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
