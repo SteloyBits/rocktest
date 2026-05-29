@@ -85,6 +85,38 @@ def normalize_story(input_data):
         "status": status
     }
 
+def normalize_comment(input_data):
+    path = str(input_data.get('path', '')).strip()
+    author = str(input_data.get('author', '')).strip()
+    email = str(input_data.get('email', '')).strip()
+    url = str(input_data.get('url', '')).strip()
+    text = str(input_data.get('text', '')).strip()
+
+    if not path:
+        raise ValueError('Missing required field: path')
+    if not text:
+        raise ValueError('Missing required field: text')
+
+    if len(path) > 200:
+        raise ValueError('path must be 200 characters or fewer')
+    if len(author) > 120:
+        raise ValueError('author must be 120 characters or fewer')
+    if len(email) > 200:
+        raise ValueError('email must be 200 characters or fewer')
+    if len(url) > 500:
+        raise ValueError('url must be 500 characters or fewer')
+    if len(text) > 4000:
+        raise ValueError('text must be 4000 characters or fewer')
+
+    return {
+        'path': path,
+        'author': author,
+        'email': email,
+        'url': url,
+        'text': text,
+        'approved': False,
+    }
+
 @app.route('/')
 @app.route('/index.html')
 def serve_index():
@@ -234,6 +266,48 @@ def get_story(slug):
         return jsonify(response.data[0])
     except Exception as e:
         print(f"Error fetching story: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/comments', methods=['GET'])
+def get_comments():
+    try:
+        path = str(request.args.get('path', '')).strip()
+        if not path:
+            return jsonify({"error": "Missing required query param: path"}), 400
+
+        supabase = get_supabase_client()
+        response = (
+            supabase.table('comments')
+            .select('id,path,author,url,text,created_at')
+            .eq('path', path)
+            .eq('approved', True)
+            .order('created_at', desc=False)
+            .execute()
+        )
+        return jsonify(response.data or [])
+    except Exception as e:
+        print(f"Error fetching comments: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/comments', methods=['POST'])
+def create_comment():
+    try:
+        supabase = get_supabase_client()
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+
+        comment = normalize_comment(data)
+        response = supabase.table('comments').insert(comment).execute()
+        inserted = response.data[0] if response.data else comment
+        return jsonify({
+            "message": "Thanks. Your comment is awaiting moderation.",
+            "comment": inserted,
+        }), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        print(f"Error creating comment: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/stories', methods=['POST'])

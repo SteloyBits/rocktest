@@ -35,6 +35,33 @@
     .detail .body code { background: #f5f7fa; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; }
     .detail .body pre { background: #f5f7fa; padding: 1rem; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; }
     .back { display: inline-block; margin: .2rem 0 1rem; color: #0a58ca; }
+    .pager { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e8e8e8; }
+    .pager-link { padding: .65rem .9rem; border: 1px solid #dfe5ec; border-radius: 999px; background: #fff; color: #111; }
+    .pager-link[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+    .comments { margin-top: 2rem; padding: 1.25rem; border: 1px solid #e8e8e8; border-radius: 14px; background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%); }
+    .comments-header { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; margin-bottom: 1rem; }
+    .comments-title { margin: 0; font-size: 1.2rem; }
+    .comments-note { margin: 0; color: #666; font-size: .92rem; }
+    .comments-list { display: grid; gap: .85rem; margin-bottom: 1rem; }
+    .comment { border: 1px solid #e8e8e8; border-radius: 12px; padding: .9rem 1rem; background: #fff; }
+    .comment-meta { display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: .35rem; color: #666; font-size: .85rem; }
+    .comment-author { font-weight: 650; color: #111; }
+    .comment-text { margin: 0; white-space: pre-wrap; color: #222; }
+    .comment-pending { display: inline-flex; align-items: center; border-radius: 999px; background: #fff8e6; color: #8a6200; padding: .15rem .5rem; font-size: .75rem; border: 1px solid #f3dd9c; }
+    .comments-empty, .comments-status { color: #666; font-size: .92rem; }
+    .comment-form { display: grid; gap: .9rem; margin-top: 1rem; }
+    .comment-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+    .comment-form label { display: grid; gap: .35rem; font-size: .9rem; color: #333; }
+    .comment-form input, .comment-form textarea { width: 100%; border: 1px solid #d8dfe6; border-radius: 10px; padding: .75rem .85rem; font: inherit; background: #fff; }
+    .comment-form textarea { min-height: 120px; resize: vertical; grid-column: 1 / -1; }
+    .comment-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    .comment-button { border: 0; border-radius: 999px; padding: .8rem 1.1rem; background: #111; color: #fff; font-weight: 650; cursor: pointer; }
+    .comment-button:disabled { opacity: .6; cursor: not-allowed; }
+    @media (max-width: 720px) {
+      .comment-form-grid { grid-template-columns: 1fr; }
+      .comments-header, .comment-form-actions { flex-direction: column; align-items: stretch; }
+      .pager { flex-direction: column; }
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -59,10 +86,47 @@
         <a id="prev-link" class="pager-link" href="#/" aria-disabled="true">Previous story</a>
         <a id="next-link" class="pager-link" href="#/" aria-disabled="true">Next story</a>
       </div>
+      <section id="comments-section" class="comments" hidden>
+        <div class="comments-header">
+          <div>
+            <h2 class="comments-title" id="comments-title">Comments</h2>
+            <p class="comments-note">Comments are reviewed before they appear publicly.</p>
+          </div>
+        </div>
+        <div id="comments-list" class="comments-list"></div>
+        <div id="comments-empty" class="comments-empty" hidden>No approved comments yet.</div>
+        <form id="comment-form" class="comment-form">
+          <div class="comment-form-grid">
+            <label>
+              Name
+              <input id="comment-author" name="author" type="text" maxlength="120" autocomplete="name" placeholder="Your name">
+            </label>
+            <label>
+              Email
+              <input id="comment-email" name="email" type="email" maxlength="200" autocomplete="email" placeholder="name@example.com">
+            </label>
+            <label>
+              Website
+              <input id="comment-url" name="url" type="url" maxlength="500" placeholder="https://example.com">
+            </label>
+            <label style="grid-column: 1 / -1;">
+              Comment
+              <textarea id="comment-text" name="text" maxlength="4000" required placeholder="Write your comment..."></textarea>
+            </label>
+          </div>
+          <div class="comment-form-actions">
+            <button id="comment-submit" class="comment-button" type="submit">Post comment</button>
+            <div id="comment-status" class="comments-status" aria-live="polite"></div>
+          </div>
+        </form>
+      </section>
     </div>
   </main>
   <script>
     let cachedStories = null;
+    const pendingCommentsByPath = new Map();
+    const approvedCommentsByPath = new Map();
+    let currentCommentPath = '';
     async function fetchStoriesData() {
       const sources = ['/api/stories', 'data.json'];
       for (const url of sources) {
@@ -84,6 +148,147 @@
     function showDetailView() {
       document.getElementById('list-view').hidden = true;
       document.getElementById('detail-view').hidden = false;
+    }
+
+    function getCommentPath(slug) {
+      return `story:${slug || ''}`;
+    }
+
+    function setCommentStatus(message, isError = false) {
+      const status = document.getElementById('comment-status');
+      status.textContent = message || '';
+      status.style.color = isError ? '#a21d1d' : '#666';
+    }
+
+    function formatCommentDate(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleString([], {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    }
+
+    function getPendingComments(path) {
+      return pendingCommentsByPath.get(path) || [];
+    }
+
+    function renderComment(comment, pending = false) {
+      const wrapper = document.createElement('article');
+      wrapper.className = 'comment';
+
+      const meta = document.createElement('div');
+      meta.className = 'comment-meta';
+
+      const author = document.createElement('span');
+      author.className = 'comment-author';
+      author.textContent = comment.author && comment.author.trim() ? comment.author : 'Anonymous';
+
+      const time = document.createElement('span');
+      time.textContent = formatCommentDate(comment.created_at || comment.createdAt) || 'Just now';
+
+      meta.appendChild(author);
+      meta.appendChild(time);
+
+      if (pending) {
+        const badge = document.createElement('span');
+        badge.className = 'comment-pending';
+        badge.textContent = 'Pending moderation';
+        meta.appendChild(badge);
+      }
+
+      const text = document.createElement('p');
+      text.className = 'comment-text';
+      text.textContent = comment.text || '';
+
+      wrapper.appendChild(meta);
+      wrapper.appendChild(text);
+      return wrapper;
+    }
+
+    function renderComments(path, comments) {
+      const section = document.getElementById('comments-section');
+      const list = document.getElementById('comments-list');
+      const empty = document.getElementById('comments-empty');
+      section.hidden = false;
+      list.innerHTML = '';
+
+      const pending = getPendingComments(path);
+      const approved = Array.isArray(comments) ? comments : (approvedCommentsByPath.get(path) || []);
+      const items = [...pending.map((comment) => ({ comment, pending: true })), ...approved.map((comment) => ({ comment, pending: false }))];
+
+      if (items.length === 0) {
+        empty.hidden = false;
+        empty.textContent = 'No approved comments yet.';
+        return;
+      }
+
+      empty.hidden = true;
+      for (const item of items) {
+        list.appendChild(renderComment(item.comment, item.pending));
+      }
+    }
+
+    async function loadComments(path) {
+      currentCommentPath = path;
+      const section = document.getElementById('comments-section');
+      const empty = document.getElementById('comments-empty');
+      const list = document.getElementById('comments-list');
+      section.hidden = false;
+      list.innerHTML = '';
+      empty.hidden = false;
+      empty.textContent = 'Loading comments...';
+      try {
+        const res = await fetch('/api/comments?path=' + encodeURIComponent(path), { cache: 'no-store' });
+        let comments = [];
+        if (res.ok) {
+          comments = await res.json();
+        } else {
+          throw new Error(await readApiError(res));
+        }
+        approvedCommentsByPath.set(path, Array.isArray(comments) ? comments : []);
+        renderComments(path, Array.isArray(comments) ? comments : []);
+      } catch (error) {
+        console.error('Failed to load comments:', error);
+        empty.hidden = false;
+        empty.textContent = error.message ? `Failed to load comments: ${error.message}` : 'Failed to load comments.';
+      }
+    }
+
+    function resetCommentForm() {
+      document.getElementById('comment-author').value = '';
+      document.getElementById('comment-email').value = '';
+      document.getElementById('comment-url').value = '';
+      document.getElementById('comment-text').value = '';
+    }
+
+    function addPendingComment(path, comment) {
+      const pending = getPendingComments(path).slice();
+      pending.unshift(comment);
+      pendingCommentsByPath.set(path, pending);
+    }
+
+    async function readApiError(response) {
+      const rawText = await response.text();
+      if (!rawText) {
+        return `Request failed with status ${response.status}`;
+      }
+
+      try {
+        const parsed = JSON.parse(rawText);
+        if (parsed && typeof parsed.error === 'string' && parsed.error.trim()) {
+          return parsed.error;
+        }
+        if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
+          return parsed.message;
+        }
+      } catch (error) {}
+
+      return rawText;
     }
     function buildCard(s) {
       const a = document.createElement('a');
@@ -226,6 +431,9 @@
           nextLink.href = '#/';
           nextLink.setAttribute('aria-disabled', 'true');
         }
+        document.getElementById('comments-title').textContent = (s.headline || 'Story') + ' comments';
+        await loadComments(getCommentPath(s.slug || slug || ''));
+        setCommentStatus('');
         showDetailView();
       } catch (e) {
         location.hash = '#/';
@@ -241,6 +449,61 @@
         loadStories();
       }
     }
+    document.getElementById('comment-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const submit = document.getElementById('comment-submit');
+      const text = document.getElementById('comment-text').value.trim();
+      const author = document.getElementById('comment-author').value.trim();
+      const email = document.getElementById('comment-email').value.trim();
+      const url = document.getElementById('comment-url').value.trim();
+
+      if (!currentCommentPath) {
+        setCommentStatus('Open a story before posting a comment.', true);
+        return;
+      }
+      if (!text) {
+        setCommentStatus('Comment text is required.', true);
+        return;
+      }
+
+      submit.disabled = true;
+      setCommentStatus('Posting your comment...');
+
+      try {
+        const res = await fetch('/api/comments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: currentCommentPath,
+            author,
+            email,
+            url,
+            text,
+          }),
+        });
+        if (!res.ok) {
+          throw new Error(await readApiError(res));
+        }
+
+        const payload = await res.json().catch(() => ({}));
+
+        addPendingComment(currentCommentPath, {
+          author,
+          email,
+          url,
+          text,
+          created_at: new Date().toISOString(),
+        });
+        renderComments(currentCommentPath);
+        resetCommentForm();
+        setCommentStatus(payload.message || 'Thanks. Your comment is awaiting moderation.');
+      } catch (error) {
+        console.error('Failed to post comment:', error);
+        setCommentStatus(error.message || 'Failed to post comment.', true);
+      } finally {
+        submit.disabled = false;
+      }
+    });
     window.addEventListener('hashchange', router);
     router();
   </script>
