@@ -276,15 +276,31 @@ def get_comments():
             return jsonify({"error": "Missing required query param: path"}), 400
 
         supabase = get_supabase_client()
-        response = (
-            supabase.table('comments')
-            .select('id,path,author,url,text,created_at')
-            .eq('path', path)
-            .eq('approved', True)
-            .order('created_at', desc=False)
-            .execute()
-        )
-        return jsonify(response.data or [])
+        paths = [path]
+        if path.startswith('story:'):
+            legacy_path = path.split('story:', 1)[1].strip()
+            if legacy_path:
+                paths.append(legacy_path)
+
+        collected = []
+        seen_ids = set()
+        for candidate_path in paths:
+            response = (
+                supabase.table('comments')
+                .select('id,path,author,url,text,created_at')
+                .eq('path', candidate_path)
+                .eq('approved', True)
+                .order('created_at', desc=False)
+                .execute()
+            )
+            for comment in response.data or []:
+                comment_id = comment.get('id')
+                if comment_id in seen_ids:
+                    continue
+                seen_ids.add(comment_id)
+                collected.append(comment)
+
+        return jsonify(collected)
     except Exception as e:
         print(f"Error fetching comments: {e}")
         return jsonify({"error": str(e)}), 500
@@ -410,6 +426,73 @@ def admin_normalize_tags():
         return jsonify({"ok": True, "updated": updated})
     except Exception as e:
         print(f"Error normalizing tags: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    try:
+        data = request.get_json() or {}
+        expected_user = os.environ.get('ADMIN_USER')
+        expected_pass = os.environ.get('ADMIN_PASS')
+        token = os.environ.get('ADMIN_TOKEN')
+
+        if not expected_user or not expected_pass or not token:
+            return jsonify({"error": "Admin credentials not configured"}), 500
+
+        if str(data.get('username', '')) == expected_user and str(data.get('password', '')) == expected_pass:
+            return jsonify({"token": token})
+        return jsonify({"error": "Invalid credentials"}), 403
+    except Exception as e:
+        print(f"Error in admin_login: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+def _check_admin_token():
+    token = request.headers.get('x-admin-token')
+    expected = os.environ.get('ADMIN_TOKEN')
+    if not expected or token != expected:
+        return False
+    return True
+
+
+@app.route('/api/admin/stories', methods=['POST'])
+def admin_create_story():
+    try:
+        if not _check_admin_token():
+            return jsonify({"error": "Forbidden"}), 403
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+
+        if 'tags' in data and not isinstance(data['tags'], list):
+            return jsonify({"error": "tags must be an array"}), 400
+
+        story = normalize_story(data)
+        supabase = get_supabase_client()
+        response = supabase.table('stories').insert(story).execute()
+        return jsonify(response.data[0] if response.data else story), 201
+    except Exception as e:
+        print(f"Error in admin_create_story: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/comments/<int:comment_id>', methods=['PATCH'])
+def admin_update_comment(comment_id):
+    try:
+        if not _check_admin_token():
+            return jsonify({"error": "Forbidden"}), 403
+
+        data = request.get_json() or {}
+        if 'approved' not in data:
+            return jsonify({"error": "Nothing to update"}), 400
+
+        supabase = get_supabase_client()
+        response = supabase.table('comments').update({'approved': bool(data.get('approved'))}).eq('id', comment_id).execute()
+        return jsonify(response.data[0] if response.data else {"ok": True}), 200
+    except Exception as e:
+        print(f"Error updating comment: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
