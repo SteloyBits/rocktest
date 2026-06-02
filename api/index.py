@@ -85,6 +85,27 @@ def normalize_story(input_data):
         "status": status
     }
 
+def is_supabase_configured():
+    return bool(os.environ.get('SUPABASE_URL') and os.environ.get('SUPABASE_KEY'))
+
+COMMENTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'comments.json')
+
+def load_local_comments():
+    if os.path.exists(COMMENTS_FILE):
+        try:
+            with open(COMMENTS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error reading local comments: {e}")
+    return []
+
+def save_local_comments(comments):
+    try:
+        with open(COMMENTS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(comments, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error writing local comments: {e}")
+
 def normalize_comment(input_data):
     path = str(input_data.get('path', '')).strip()
     author = str(input_data.get('author', '')).strip()
@@ -110,9 +131,9 @@ def normalize_comment(input_data):
 
     return {
         'path': path,
-        'author': author,
-        'email': email,
-        'url': url,
+        'author': author if author else None,
+        'email': email if email else None,
+        'url': url if url else None,
         'text': text,
         'approved': False,
     }
@@ -275,32 +296,28 @@ def get_comments():
         if not path:
             return jsonify({"error": "Missing required query param: path"}), 400
 
-        supabase = get_supabase_client()
-        paths = [path]
-        if path.startswith('story:'):
-            legacy_path = path.split('story:', 1)[1].strip()
-            if legacy_path:
-                paths.append(legacy_path)
-
-        collected = []
-        seen_ids = set()
-        for candidate_path in paths:
+        if is_supabase_configured():
+            supabase = get_supabase_client()
             response = (
                 supabase.table('comments')
                 .select('id,path,author,url,text,created_at')
-                .eq('path', candidate_path)
+                .eq('path', path)
                 .eq('approved', True)
                 .order('created_at', desc=False)
                 .execute()
             )
-            for comment in response.data or []:
-                comment_id = comment.get('id')
-                if comment_id in seen_ids:
-                    continue
-                seen_ids.add(comment_id)
-                collected.append(comment)
-
-        return jsonify(collected)
+            return jsonify(response.data or [])
+        else:
+            comments = load_local_comments()
+            filtered = [
+                c for c in comments 
+                if c.get('path') == path and c.get('approved', True)
+            ]
+            try:
+                filtered.sort(key=lambda x: x.get('created_at', ''))
+            except Exception:
+                pass
+            return jsonify(filtered)
     except Exception as e:
         print(f"Error fetching comments: {e}")
         return jsonify({"error": str(e)}), 500
@@ -308,18 +325,33 @@ def get_comments():
 @app.route('/api/comments', methods=['POST'])
 def create_comment():
     try:
-        supabase = get_supabase_client()
         data = request.get_json()
         if not data:
             return jsonify({"error": "Invalid JSON body"}), 400
 
         comment = normalize_comment(data)
-        response = supabase.table('comments').insert(comment).execute()
-        inserted = response.data[0] if response.data else comment
-        return jsonify({
-            "message": "Thanks. Your comment is awaiting moderation.",
-            "comment": inserted,
-        }), 201
+
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            response = supabase.table('comments').insert(comment).execute()
+            inserted = response.data[0] if response.data else comment
+            return jsonify({
+                "message": "Thanks. Your comment is awaiting moderation.",
+                "comment": inserted,
+            }), 201
+        else:
+            comment['id'] = generate_id()
+            comment['created_at'] = datetime.now(timezone.utc).isoformat()
+            comment['approved'] = True
+            
+            comments = load_local_comments()
+            comments.append(comment)
+            save_local_comments(comments)
+            
+            return jsonify({
+                "message": "Thanks. Your comment has been posted.",
+                "comment": comment,
+            }), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -426,73 +458,6 @@ def admin_normalize_tags():
         return jsonify({"ok": True, "updated": updated})
     except Exception as e:
         print(f"Error normalizing tags: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/admin/login', methods=['POST'])
-def admin_login():
-    try:
-        data = request.get_json() or {}
-        expected_user = os.environ.get('ADMIN_USER')
-        expected_pass = os.environ.get('ADMIN_PASS')
-        token = os.environ.get('ADMIN_TOKEN')
-
-        if not expected_user or not expected_pass or not token:
-            return jsonify({"error": "Admin credentials not configured"}), 500
-
-        if str(data.get('username', '')) == expected_user and str(data.get('password', '')) == expected_pass:
-            return jsonify({"token": token})
-        return jsonify({"error": "Invalid credentials"}), 403
-    except Exception as e:
-        print(f"Error in admin_login: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-def _check_admin_token():
-    token = request.headers.get('x-admin-token')
-    expected = os.environ.get('ADMIN_TOKEN')
-    if not expected or token != expected:
-        return False
-    return True
-
-
-@app.route('/api/admin/stories', methods=['POST'])
-def admin_create_story():
-    try:
-        if not _check_admin_token():
-            return jsonify({"error": "Forbidden"}), 403
-
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON body"}), 400
-
-        if 'tags' in data and not isinstance(data['tags'], list):
-            return jsonify({"error": "tags must be an array"}), 400
-
-        story = normalize_story(data)
-        supabase = get_supabase_client()
-        response = supabase.table('stories').insert(story).execute()
-        return jsonify(response.data[0] if response.data else story), 201
-    except Exception as e:
-        print(f"Error in admin_create_story: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/admin/comments/<int:comment_id>', methods=['PATCH'])
-def admin_update_comment(comment_id):
-    try:
-        if not _check_admin_token():
-            return jsonify({"error": "Forbidden"}), 403
-
-        data = request.get_json() or {}
-        if 'approved' not in data:
-            return jsonify({"error": "Nothing to update"}), 400
-
-        supabase = get_supabase_client()
-        response = supabase.table('comments').update({'approved': bool(data.get('approved'))}).eq('id', comment_id).execute()
-        return jsonify(response.data[0] if response.data else {"ok": True}), 200
-    except Exception as e:
-        print(f"Error updating comment: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
