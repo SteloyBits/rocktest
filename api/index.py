@@ -460,6 +460,172 @@ def admin_normalize_tags():
         print(f"Error normalizing tags: {e}")
         return jsonify({"error": str(e)}), 500
 
+
+@app.route('/api/admin/comments', methods=['GET'])
+def admin_get_comments():
+    try:
+        token = request.headers.get('x-admin-token')
+        expected = os.environ.get('ADMIN_TOKEN')
+        if not expected or token != expected:
+            return jsonify({"error": "Forbidden"}), 403
+
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            response = (
+                supabase.table('comments')
+                .select('*')
+                .order('created_at', desc=True)
+                .execute()
+            )
+            return jsonify(response.data or [])
+        else:
+            comments = load_local_comments()
+            return jsonify(comments)
+    except Exception as e:
+        print(f"Error fetching admin comments: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/comments/moderate', methods=['POST'])
+def admin_moderate_comment():
+    try:
+        token = request.headers.get('x-admin-token')
+        expected = os.environ.get('ADMIN_TOKEN')
+        if not expected or token != expected:
+            return jsonify({"error": "Forbidden"}), 403
+
+        data = request.get_json()
+        if not data or 'id' not in data or 'action' not in data:
+            return jsonify({"error": "Missing id or action"}), 400
+
+        comment_id = data['id']
+        action = data['action'] # 'approve', 'reject', 'spam', 'purge'
+
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            if action == 'approve':
+                response = supabase.table('comments').update({'approved': True}).eq('id', comment_id).execute()
+            elif action in ('reject', 'spam', 'purge'):
+                response = supabase.table('comments').delete().eq('id', comment_id).execute()
+            else:
+                return jsonify({"error": f"Invalid action: {action}"}), 400
+            return jsonify({"ok": True, "comment": response.data[0] if response.data else None})
+        else:
+            comments = load_local_comments()
+            found = False
+            new_comments = []
+            target = None
+            for c in comments:
+                if str(c.get('id')) == str(comment_id):
+                    found = True
+                    if action == 'approve':
+                        c['approved'] = True
+                        new_comments.append(c)
+                        target = c
+                    elif action in ('reject', 'spam', 'purge'):
+                        target = c
+                    else:
+                        return jsonify({"error": f"Invalid action: {action}"}), 400
+                else:
+                    new_comments.append(c)
+            if not found:
+                return jsonify({"error": "Comment not found"}), 404
+            save_local_comments(new_comments)
+            return jsonify({"ok": True, "comment": target})
+    except Exception as e:
+        print(f"Error moderating comment: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/stories/<id>', methods=['DELETE'])
+def delete_story(id):
+    try:
+        token = request.headers.get('x-admin-token')
+        expected = os.environ.get('ADMIN_TOKEN')
+        if not expected or token != expected:
+            return jsonify({"error": "Forbidden"}), 403
+
+        supabase = get_supabase_client()
+        response = supabase.table('stories').delete().eq('id', id).execute()
+        if not response.data:
+            response = supabase.table('stories').delete().eq('slug', id).execute()
+        
+        return jsonify({"ok": True, "deleted": len(response.data) if response.data else 0})
+    except Exception as e:
+        print(f"Error deleting story: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/stories/<id>', methods=['PUT'])
+def update_story(id):
+    try:
+        token = request.headers.get('x-admin-token')
+        expected = os.environ.get('ADMIN_TOKEN')
+        if not expected or token != expected:
+            return jsonify({"error": "Forbidden"}), 403
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON body"}), 400
+
+        supabase = get_supabase_client()
+        
+        current_resp = supabase.table('stories').select('*').eq('id', id).execute()
+        if not current_resp.data:
+            current_resp = supabase.table('stories').select('*').eq('slug', id).execute()
+            if not current_resp.data:
+                return jsonify({"error": "Story not found"}), 404
+        
+        story_to_update = current_resp.data[0]
+        sid = story_to_update['id']
+
+        update_fields = {}
+        if 'headline' in data:
+            update_fields['headline'] = data['headline']
+        if 'body' in data:
+            update_fields['body'] = data['body']
+        if 'image_url' in data:
+            update_fields['image_url'] = data['image_url']
+        if 'excerpt' in data:
+            update_fields['excerpt'] = data['excerpt']
+        if 'tags' in data:
+            if not isinstance(data['tags'], list):
+                return jsonify({"error": "tags must be an array"}), 400
+            parts = []
+            for t in data['tags']:
+                if isinstance(t, str):
+                    parts.extend([p.strip() for p in t.split(',') if p.strip()])
+            seen = set()
+            deduped = []
+            for t in parts:
+                if t not in seen:
+                    seen.add(t)
+                    deduped.append(t)
+            update_fields['tags'] = deduped
+        if 'category' in data:
+            update_fields['category'] = data['category']
+        if 'status' in data:
+            update_fields['status'] = data['status']
+        if 'quality_score' in data:
+            try:
+                update_fields['quality_score'] = float(data['quality_score'])
+            except (ValueError, TypeError):
+                pass
+        if 'slug' in data and data['slug']:
+            update_fields['slug'] = data['slug']
+        elif 'headline' in data:
+            slug = data['headline'].lower()
+            slug = re.sub(r'\s+', '-', slug)
+            slug = re.sub(r'[^a-z0-9\-]', '', slug)
+            update_fields['slug'] = slug
+
+        response = supabase.table('stories').update(update_fields).eq('id', sid).execute()
+        return jsonify(response.data[0]), 200
+    except Exception as e:
+        print(f"Error updating story: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3000))
     app.run(host='0.0.0.0', port=port)
