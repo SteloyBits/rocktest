@@ -69,7 +69,7 @@ def normalize_story(input_data):
         slug = re.sub(r'\s+', '-', slug)
         slug = re.sub(r'[^a-z0-9\-]', '', slug)
 
-    # now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     return {
         "id": generate_id(),
@@ -82,13 +82,31 @@ def normalize_story(input_data):
         "meta_description": meta_description,
         "category": category,
         "quality_score": quality_score,
-        "status": status
+        "status": status,
+        "created_at": now
     }
 
 def is_supabase_configured():
     return bool(os.environ.get('SUPABASE_URL') and os.environ.get('SUPABASE_KEY'))
 
 COMMENTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'comments.json')
+STORIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data.json')
+
+def load_local_stories():
+    if os.path.exists(STORIES_FILE):
+        try:
+            with open(STORIES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error reading local stories: {e}")
+    return []
+
+def save_local_stories(stories):
+    try:
+        with open(STORIES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(stories, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error writing local stories: {e}")
 
 def load_local_comments():
     if os.path.exists(COMMENTS_FILE):
@@ -150,7 +168,6 @@ def health():
 @app.route('/api/stories', methods=['GET'])
 def get_stories(top_n: int = None) -> dict:
     try:
-        supabase = get_supabase_client()
         # Extract optional top_n from query params, default to None (return all)
         top_n_param = request.args.get('top_n')
         if top_n_param is not None:
@@ -172,62 +189,113 @@ def get_stories(top_n: int = None) -> dict:
                 sort_by_popular = True
                 filters = [f for f in filters if f != 'popular']
 
-        # Build initial query: order by quality_score if popular, otherwise by created_at
-        if sort_by_popular:
-            query = supabase.table('stories').select('*').order('quality_score', desc=True)
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            if sort_by_popular:
+                query = supabase.table('stories').select('*').order('quality_score', desc=True)
+            else:
+                query = supabase.table('stories').select('*').order('created_at', desc=False)
+
+            if top_n is not None:
+                query = query.limit(top_n)
+
+            response = query.execute()
+
+            stories = response.data or []
+
+            # If filters specified, prefer DB-level filtering per-filter (category eq OR tags contains).
+            if filters:
+                collected = []
+                seen_ids = set()
+                for f in filters:
+                    # try category match
+                    try:
+                        q_cat = supabase.table('stories').select('*').eq('category', f)
+                        if sort_by_popular:
+                            q_cat = q_cat.order('quality_score', desc=True)
+                        else:
+                            q_cat = q_cat.order('created_at', desc=False)
+                        # fetch a reasonable batch
+                        q_cat = q_cat.limit(top_n * 3 if top_n else 100)
+                        resp_cat = q_cat.execute()
+                        for s in (resp_cat.data or []):
+                            sid = s.get('id')
+                            if sid and sid not in seen_ids:
+                                seen_ids.add(sid)
+                                collected.append(s)
+                    except Exception:
+                        pass
+
+                    # try tags contains (for text[] or json array column)
+                    try:
+                        q_tags = supabase.table('stories').select('*').filter('tags', 'cs', [f])
+                        if sort_by_popular:
+                            q_tags = q_tags.order('quality_score', desc=True)
+                        else:
+                            q_tags = q_tags.order('created_at', desc=False)
+                        q_tags = q_tags.limit(top_n * 3 if top_n else 100)
+                        resp_tags = q_tags.execute()
+                        for s in (resp_tags.data or []):
+                            sid = s.get('id')
+                            if sid and sid not in seen_ids:
+                                seen_ids.add(sid)
+                                collected.append(s)
+                    except Exception:
+                        # fallback: skip tags DB filter if unsupported
+                        pass
+
+                # If DB-level collected nothing, fall back to in-memory filtering of the original fetch
+                if not collected:
+                    def matches_filters_local(story, filters_list):
+                        if not filters_list:
+                            return True
+                        cat = str(story.get('category', '')).lower()
+                        tags_val = story.get('tags') or []
+                        normalized_tags = []
+                        if isinstance(tags_val, list):
+                            for t in tags_val:
+                                if not isinstance(t, str):
+                                    continue
+                                for part in [p.strip() for p in t.split(',') if p.strip()]:
+                                    normalized_tags.append(part.lower())
+                        elif isinstance(tags_val, str):
+                            normalized_tags = [p.strip().lower() for p in tags_val.split(',') if p.strip()]
+
+                        for f in filters_list:
+                            if f == cat:
+                                return True
+                            for t in normalized_tags:
+                                if f in t:
+                                    return True
+                        return False
+
+                    collected = [s for s in stories if matches_filters_local(s, filters)]
+
+                # apply ordering
+                if sort_by_popular:
+                    try:
+                        collected.sort(key=lambda s: (s.get('quality_score') is None, -(s.get('quality_score') or 0)))
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        collected.sort(key=lambda s: s.get('created_at') or '')
+                    except Exception:
+                        pass
+
+                # apply final limit
+                if top_n is not None:
+                    collected = collected[:top_n]
+
+                return jsonify(collected)
+
+            # no filters: return DB response (possibly limited above)
+            return jsonify(stories)
         else:
-            query = supabase.table('stories').select('*').order('created_at', desc=True)
+            # Local fallback mode
+            stories = load_local_stories()
 
-        if top_n is not None:
-            query = query.limit(top_n)
-
-        response = query.execute()
-
-        stories = response.data or []
-
-        # If filters specified, prefer DB-level filtering per-filter (category eq OR tags contains).
-        if filters:
-            collected = []
-            seen_ids = set()
-            for f in filters:
-                # try category match
-                try:
-                    q_cat = supabase.table('stories').select('*').eq('category', f)
-                    if sort_by_popular:
-                        q_cat = q_cat.order('quality_score', desc=True)
-                    else:
-                        q_cat = q_cat.order('created_at', desc=True)
-                    # fetch a reasonable batch
-                    q_cat = q_cat.limit(top_n * 3 if top_n else 100)
-                    resp_cat = q_cat.execute()
-                    for s in (resp_cat.data or []):
-                        sid = s.get('id')
-                        if sid and sid not in seen_ids:
-                            seen_ids.add(sid)
-                            collected.append(s)
-                except Exception:
-                    pass
-
-                # try tags contains (for text[] or json array column)
-                try:
-                    q_tags = supabase.table('stories').select('*').filter('tags', 'cs', [f])
-                    if sort_by_popular:
-                        q_tags = q_tags.order('quality_score', desc=True)
-                    else:
-                        q_tags = q_tags.order('created_at', desc=True)
-                    q_tags = q_tags.limit(top_n * 3 if top_n else 100)
-                    resp_tags = q_tags.execute()
-                    for s in (resp_tags.data or []):
-                        sid = s.get('id')
-                        if sid and sid not in seen_ids:
-                            seen_ids.add(sid)
-                            collected.append(s)
-                except Exception:
-                    # fallback: skip tags DB filter if unsupported
-                    pass
-
-            # If DB-level collected nothing, fall back to in-memory filtering of the original fetch
-            if not collected:
+            if filters:
                 def matches_filters_local(story, filters_list):
                     if not filters_list:
                         return True
@@ -251,28 +319,23 @@ def get_stories(top_n: int = None) -> dict:
                                 return True
                     return False
 
-                collected = [s for s in stories if matches_filters_local(s, filters)]
+                stories = [s for s in stories if matches_filters_local(s, filters)]
 
-            # apply ordering
             if sort_by_popular:
                 try:
-                    collected.sort(key=lambda s: (s.get('quality_score') is None, -(s.get('quality_score') or 0)))
+                    stories.sort(key=lambda s: (s.get('quality_score') is None, -(s.get('quality_score') or 0)))
                 except Exception:
                     pass
             else:
                 try:
-                    collected.sort(key=lambda s: s.get('created_at') or '', reverse=True)
+                    stories.sort(key=lambda s: s.get('created_at') or '')
                 except Exception:
                     pass
 
-            # apply final limit
             if top_n is not None:
-                collected = collected[:top_n]
+                stories = stories[:top_n]
 
-            return jsonify(collected)
-
-        # no filters: return DB response (possibly limited above)
-        return jsonify(stories)
+            return jsonify(stories)
     except Exception as e:
         print(f"Error fetching stories: {e}")
         return jsonify({"error": str(e)}), 500
@@ -280,11 +343,18 @@ def get_stories(top_n: int = None) -> dict:
 @app.route('/api/stories/<slug>', methods=['GET'])
 def get_story(slug):
     try:
-        supabase = get_supabase_client()
-        response = supabase.table('stories').select('*').eq('slug', slug).execute()
-        if not response.data:
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            response = supabase.table('stories').select('*').eq('slug', slug).execute()
+            if not response.data:
+                return jsonify({"error": "Not found"}), 404
+            return jsonify(response.data[0])
+        else:
+            stories = load_local_stories()
+            for s in stories:
+                if s.get('slug') == slug or str(s.get('id')) == slug:
+                    return jsonify(s)
             return jsonify({"error": "Not found"}), 404
-        return jsonify(response.data[0])
     except Exception as e:
         print(f"Error fetching story: {e}")
         return jsonify({"error": str(e)}), 500
@@ -361,7 +431,6 @@ def create_comment():
 @app.route('/api/stories', methods=['POST'])
 def create_story():
     try:
-        supabase = get_supabase_client()
         data = request.get_json()
         if not data:
             return jsonify({"error": "Invalid JSON body"}), 400
@@ -375,8 +444,16 @@ def create_story():
             return jsonify({"error": "tags must be an array"}), 400
             
         story = normalize_story(data)
-        response = supabase.table('stories').insert(story).execute()
-        return jsonify(response.data[0]), 201
+        
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            response = supabase.table('stories').insert(story).execute()
+            return jsonify(response.data[0]), 201
+        else:
+            stories = load_local_stories()
+            stories.append(story)
+            save_local_stories(stories)
+            return jsonify(story), 201
     except Exception as e:
         print(f"Error creating story: {e}")
         return jsonify({"error": str(e)}), 500
@@ -384,13 +461,19 @@ def create_story():
 @app.route('/api/stories', methods=['DELETE'])
 def delete_stories():
     try:
-        supabase = get_supabase_client()
-        response = supabase.table('stories').select('id').execute()
-        count = len(response.data)
-        if count > 0:
-            ids = [s['id'] for s in response.data]
-            supabase.table('stories').delete().in_('id', ids).execute()
-        return jsonify({"ok": True, "deleted": count})
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            response = supabase.table('stories').select('id').execute()
+            count = len(response.data)
+            if count > 0:
+                ids = [s['id'] for s in response.data]
+                supabase.table('stories').delete().in_('id', ids).execute()
+            return jsonify({"ok": True, "deleted": count})
+        else:
+            stories = load_local_stories()
+            count = len(stories)
+            save_local_stories([])
+            return jsonify({"ok": True, "deleted": count})
     except Exception as e:
         print(f"Error deleting stories: {e}")
         return jsonify({"error": str(e)}), 500
@@ -398,18 +481,24 @@ def delete_stories():
 @app.route('/api/reset', methods=['POST', 'DELETE'])
 def reset_stories():
     try:
-        supabase = get_supabase_client()
         token = request.headers.get('x-admin-token')
         expected = os.environ.get('ADMIN_TOKEN')
         if not expected or token != expected:
             return jsonify({"error": "Forbidden"}), 403
         
-        response = supabase.table('stories').select('id').execute()
-        count = len(response.data)
-        if count > 0:
-            ids = [s['id'] for s in response.data]
-            supabase.table('stories').delete().in_('id', ids).execute()
-        return jsonify({"ok": True, "deleted": count})
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            response = supabase.table('stories').select('id').execute()
+            count = len(response.data)
+            if count > 0:
+                ids = [s['id'] for s in response.data]
+                supabase.table('stories').delete().in_('id', ids).execute()
+            return jsonify({"ok": True, "deleted": count})
+        else:
+            stories = load_local_stories()
+            count = len(stories)
+            save_local_stories([])
+            return jsonify({"ok": True, "deleted": count})
     except Exception as e:
         print(f"Error resetting stories: {e}")
         return jsonify({"error": str(e)}), 500
@@ -422,11 +511,6 @@ def admin_normalize_tags():
         expected = os.environ.get('ADMIN_TOKEN')
         if not expected or token != expected:
             return jsonify({"error": "Forbidden"}), 403
-
-        supabase = get_supabase_client()
-        response = supabase.table('stories').select('id,tags').execute()
-        rows = response.data or []
-        updated = 0
 
         def normalize_tags_list(tags_val):
             parts = []
@@ -447,15 +531,33 @@ def admin_normalize_tags():
                     out.append(p)
             return out
 
-        for r in rows:
-            sid = r.get('id')
-            tags_val = r.get('tags')
-            normalized = normalize_tags_list(tags_val)
-            if normalized != tags_val:
-                supabase.table('stories').update({'tags': normalized}).eq('id', sid).execute()
-                updated += 1
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            response = supabase.table('stories').select('id,tags').execute()
+            rows = response.data or []
+            updated = 0
 
-        return jsonify({"ok": True, "updated": updated})
+            for r in rows:
+                sid = r.get('id')
+                tags_val = r.get('tags')
+                normalized = normalize_tags_list(tags_val)
+                if normalized != tags_val:
+                    supabase.table('stories').update({'tags': normalized}).eq('id', sid).execute()
+                    updated += 1
+
+            return jsonify({"ok": True, "updated": updated})
+        else:
+            stories = load_local_stories()
+            updated = 0
+            for s in stories:
+                tags_val = s.get('tags')
+                normalized = normalize_tags_list(tags_val)
+                if normalized != tags_val:
+                    s['tags'] = normalized
+                    updated += 1
+            if updated > 0:
+                save_local_stories(stories)
+            return jsonify({"ok": True, "updated": updated})
     except Exception as e:
         print(f"Error normalizing tags: {e}")
         return jsonify({"error": str(e)}), 500
@@ -545,12 +647,25 @@ def delete_story(id):
         if not expected or token != expected:
             return jsonify({"error": "Forbidden"}), 403
 
-        supabase = get_supabase_client()
-        response = supabase.table('stories').delete().eq('id', id).execute()
-        if not response.data:
-            response = supabase.table('stories').delete().eq('slug', id).execute()
-        
-        return jsonify({"ok": True, "deleted": len(response.data) if response.data else 0})
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            response = supabase.table('stories').delete().eq('id', id).execute()
+            if not response.data:
+                response = supabase.table('stories').delete().eq('slug', id).execute()
+            
+            return jsonify({"ok": True, "deleted": len(response.data) if response.data else 0})
+        else:
+            stories = load_local_stories()
+            new_stories = []
+            deleted_count = 0
+            for s in stories:
+                if str(s.get('id')) == str(id) or s.get('slug') == id:
+                    deleted_count += 1
+                else:
+                    new_stories.append(s)
+            if deleted_count > 0:
+                save_local_stories(new_stories)
+            return jsonify({"ok": True, "deleted": deleted_count})
     except Exception as e:
         print(f"Error deleting story: {e}")
         return jsonify({"error": str(e)}), 500
@@ -567,17 +682,6 @@ def update_story(id):
         data = request.get_json()
         if not data:
             return jsonify({"error": "Invalid JSON body"}), 400
-
-        supabase = get_supabase_client()
-        
-        current_resp = supabase.table('stories').select('*').eq('id', id).execute()
-        if not current_resp.data:
-            current_resp = supabase.table('stories').select('*').eq('slug', id).execute()
-            if not current_resp.data:
-                return jsonify({"error": "Story not found"}), 404
-        
-        story_to_update = current_resp.data[0]
-        sid = story_to_update['id']
 
         update_fields = {}
         if 'headline' in data:
@@ -619,8 +723,35 @@ def update_story(id):
             slug = re.sub(r'[^a-z0-9\-]', '', slug)
             update_fields['slug'] = slug
 
-        response = supabase.table('stories').update(update_fields).eq('id', sid).execute()
-        return jsonify(response.data[0]), 200
+        if is_supabase_configured():
+            supabase = get_supabase_client()
+            
+            current_resp = supabase.table('stories').select('*').eq('id', id).execute()
+            if not current_resp.data:
+                current_resp = supabase.table('stories').select('*').eq('slug', id).execute()
+                if not current_resp.data:
+                    return jsonify({"error": "Story not found"}), 404
+            
+            story_to_update = current_resp.data[0]
+            sid = story_to_update['id']
+
+            response = supabase.table('stories').update(update_fields).eq('id', sid).execute()
+            return jsonify(response.data[0]), 200
+        else:
+            stories = load_local_stories()
+            found = False
+            updated_story = None
+            for s in stories:
+                if str(s.get('id')) == str(id) or s.get('slug') == id:
+                    found = True
+                    for k, v in update_fields.items():
+                        s[k] = v
+                    updated_story = s
+                    break
+            if not found:
+                return jsonify({"error": "Story not found"}), 404
+            save_local_stories(stories)
+            return jsonify(updated_story), 200
     except Exception as e:
         print(f"Error updating story: {e}")
         return jsonify({"error": str(e)}), 500
