@@ -191,11 +191,10 @@ def get_stories(top_n: int = None) -> dict:
 
         if is_supabase_configured():
             supabase = get_supabase_client()
-            # Build initial query: order by quality_score if popular, otherwise by created_at
             if sort_by_popular:
                 query = supabase.table('stories').select('*').order('quality_score', desc=True)
             else:
-                query = supabase.table('stories').select('*').order('created_at', desc=True)
+                query = supabase.table('stories').select('*').order('created_at', desc=False)
 
             if top_n is not None:
                 query = query.limit(top_n)
@@ -215,7 +214,7 @@ def get_stories(top_n: int = None) -> dict:
                         if sort_by_popular:
                             q_cat = q_cat.order('quality_score', desc=True)
                         else:
-                            q_cat = q_cat.order('created_at', desc=True)
+                            q_cat = q_cat.order('created_at', desc=False)
                         # fetch a reasonable batch
                         q_cat = q_cat.limit(top_n * 3 if top_n else 100)
                         resp_cat = q_cat.execute()
@@ -233,7 +232,7 @@ def get_stories(top_n: int = None) -> dict:
                         if sort_by_popular:
                             q_tags = q_tags.order('quality_score', desc=True)
                         else:
-                            q_tags = q_tags.order('created_at', desc=True)
+                            q_tags = q_tags.order('created_at', desc=False)
                         q_tags = q_tags.limit(top_n * 3 if top_n else 100)
                         resp_tags = q_tags.execute()
                         for s in (resp_tags.data or []):
@@ -280,7 +279,7 @@ def get_stories(top_n: int = None) -> dict:
                         pass
                 else:
                     try:
-                        collected.sort(key=lambda s: s.get('created_at') or '', reverse=True)
+                        collected.sort(key=lambda s: s.get('created_at') or '')
                     except Exception:
                         pass
 
@@ -329,7 +328,7 @@ def get_stories(top_n: int = None) -> dict:
                     pass
             else:
                 try:
-                    stories.sort(key=lambda s: s.get('created_at') or '', reverse=True)
+                    stories.sort(key=lambda s: s.get('created_at') or '')
                 except Exception:
                     pass
 
