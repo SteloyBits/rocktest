@@ -172,11 +172,8 @@ def get_stories(top_n: int = None) -> dict:
                 sort_by_popular = True
                 filters = [f for f in filters if f != 'popular']
 
-        # Build initial query: order by quality_score if popular, otherwise by created_at
-        if sort_by_popular:
-            query = supabase.table('stories').select('*').order('quality_score', desc=True)
-        else:
-            query = supabase.table('stories').select('*').order('created_at', desc=True)
+        # Build initial query: order by created_at ascending (FIFO)
+        query = supabase.table('stories').select('*').order('created_at', desc=False)
 
         if top_n is not None:
             query = query.limit(top_n)
@@ -193,10 +190,7 @@ def get_stories(top_n: int = None) -> dict:
                 # try category match
                 try:
                     q_cat = supabase.table('stories').select('*').eq('category', f)
-                    if sort_by_popular:
-                        q_cat = q_cat.order('quality_score', desc=True)
-                    else:
-                        q_cat = q_cat.order('created_at', desc=True)
+                    q_cat = q_cat.order('created_at', desc=False)
                     # fetch a reasonable batch
                     q_cat = q_cat.limit(top_n * 3 if top_n else 100)
                     resp_cat = q_cat.execute()
@@ -211,10 +205,7 @@ def get_stories(top_n: int = None) -> dict:
                 # try tags contains (for text[] or json array column)
                 try:
                     q_tags = supabase.table('stories').select('*').filter('tags', 'cs', [f])
-                    if sort_by_popular:
-                        q_tags = q_tags.order('quality_score', desc=True)
-                    else:
-                        q_tags = q_tags.order('created_at', desc=True)
+                    q_tags = q_tags.order('created_at', desc=False)
                     q_tags = q_tags.limit(top_n * 3 if top_n else 100)
                     resp_tags = q_tags.execute()
                     for s in (resp_tags.data or []):
@@ -253,17 +244,11 @@ def get_stories(top_n: int = None) -> dict:
 
                 collected = [s for s in stories if matches_filters_local(s, filters)]
 
-            # apply ordering
-            if sort_by_popular:
-                try:
-                    collected.sort(key=lambda s: (s.get('quality_score') is None, -(s.get('quality_score') or 0)))
-                except Exception:
-                    pass
-            else:
-                try:
-                    collected.sort(key=lambda s: s.get('created_at') or '', reverse=True)
-                except Exception:
-                    pass
+            # apply ordering: FIFO (created_at ascending)
+            try:
+                collected.sort(key=lambda s: s.get('created_at') or '')
+            except Exception:
+                pass
 
             # apply final limit
             if top_n is not None:

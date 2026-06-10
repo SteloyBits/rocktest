@@ -1,132 +1,1183 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>News Stories</title>
+  <title>Rocktest</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
   <style>
-    :root { color-scheme: light; }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.6; background: #fff; color: #111; }
-    a { color: inherit; text-decoration: none; }
-    header { padding: 1rem; border-bottom: 1px solid #e5e5e5; background: #fff; position: sticky; top: 0; z-index: 10; }
-    .container { max-width: 1000px; margin: 0 auto; padding: 0 1rem; }
-    main { max-width: 1000px; margin: 0 auto; padding: 1rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.2rem; }
-    .card { border: 1px solid #e8e8e8; border-radius: 10px; overflow: hidden; background: #fff; transition: box-shadow .2s ease, transform .02s ease; }
-    .card:hover { box-shadow: 0 4px 18px rgba(0,0,0,0.06); }
-    .thumb { width: 100%; height: 160px; object-fit: cover; display: block; background: #f2f2f2; }
-    .content { padding: 1rem; }
-    .title { margin: 0 0 .4rem; font-size: 1.15rem; line-height: 1.3; }
-    .excerpt { color: #444; font-size: .95rem; margin: .4rem 0 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-    .tags { color: #666; font-size: .85rem; margin-top: .4rem; }
-    .chip { display: inline-block; background: #f5f7fa; color: #333; border: 1px solid #e7ebf0; border-radius: 999px; padding: .15rem .6rem; margin-right: .4rem; margin-bottom: .4rem; font-size: .8rem; }
-    .empty { text-align: center; padding: 3rem 1rem; color: #666; }
-    .detail { max-width: 800px; margin: 0 auto; }
-    .detail h1 { margin: .5rem 0 0.75rem; font-size: 2rem; line-height: 1.2; }
-    .detail .hero { width: 100%; max-height: 420px; object-fit: cover; border-radius: 8px; background: #f2f2f2; }
-    .detail .body { font-size: 1.05rem; color: #222; margin-top: 1.5rem; }
-    .detail .body h1, .detail .body h2, .detail .body h3 { margin-top: 1.5rem; margin-bottom: 0.75rem; }
-    .detail .body p { margin-bottom: 1rem; }
-    .detail .body ul, .detail .body ol { margin-bottom: 1rem; padding-left: 1.5rem; }
-    .detail .body li { margin-bottom: 0.5rem; }
-    .detail .body blockquote { border-left: 4px solid #e5e5e5; padding-left: 1rem; margin-left: 0; color: #666; font-style: italic; }
-    .detail .body img { max-width: 100%; height: auto; border-radius: 4px; }
-    .detail .body code { background: #f5f7fa; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; }
-    .detail .body pre { background: #f5f7fa; padding: 1rem; border-radius: 8px; overflow-x: auto; margin-bottom: 1rem; }
-    .back { display: inline-block; margin: .2rem 0 1rem; color: #0a58ca; }
-    .pager { display: flex; justify-content: space-between; gap: 1rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e8e8e8; }
-    .pager-link { padding: .65rem .9rem; border: 1px solid #dfe5ec; border-radius: 999px; background: #fff; color: #111; }
-    .pager-link[aria-disabled="true"] { opacity: .45; pointer-events: none; }
-    .comments { margin-top: 2rem; padding: 1.25rem; border: 1px solid #e8e8e8; border-radius: 14px; background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%); }
-    .comments-header { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; margin-bottom: 1rem; }
-    .comments-title { margin: 0; font-size: 1.2rem; }
-    .comments-note { margin: 0; color: #666; font-size: .92rem; }
-    .comments-list { display: grid; gap: .85rem; margin-bottom: 1rem; }
-    .comment { border: 1px solid #e8e8e8; border-radius: 12px; padding: .9rem 1rem; background: #fff; }
-    .comment-meta { display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: .35rem; color: #666; font-size: .85rem; }
-    .comment-author { font-weight: 650; color: #111; }
-    .comment-text { margin: 0; white-space: pre-wrap; color: #222; }
-    .comment-pending { display: inline-flex; align-items: center; border-radius: 999px; background: #fff8e6; color: #8a6200; padding: .15rem .5rem; font-size: .75rem; border: 1px solid #f3dd9c; }
-    .comments-empty, .comments-status { color: #666; font-size: .92rem; }
-    .comment-form { display: grid; gap: .9rem; margin-top: 1rem; }
-    .comment-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
-    .comment-form label { display: grid; gap: .35rem; font-size: .9rem; color: #333; }
-    .comment-form input, .comment-form textarea { width: 100%; border: 1px solid #d8dfe6; border-radius: 10px; padding: .75rem .85rem; font: inherit; background: #fff; }
-    .comment-form textarea { min-height: 120px; resize: vertical; grid-column: 1 / -1; }
-    .comment-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-    .comment-button { border: 0; border-radius: 999px; padding: .8rem 1.1rem; background: #111; color: #fff; font-weight: 650; cursor: pointer; }
-    .comment-button:disabled { opacity: .6; cursor: not-allowed; }
+    :root {
+      color-scheme: light;
+      --font-primary: 'Outfit', system-ui, -apple-system, sans-serif;
+      --bg-body: #f8fafc;
+      --bg-card: #ffffff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --accent-color: #4f46e5;
+      --accent-hover: #4338ca;
+      --border-color: #f1f5f9;
+      --border-hover: #e2e8f0;
+      --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      --transition-normal: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-primary);
+      line-height: 1.6;
+      background: var(--bg-body);
+      color: var(--text-main);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    header {
+      padding: 1.25rem 0;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+      background: rgba(255, 255, 255, 0.85);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin: 0;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #1e293b 0%, #4f46e5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 2rem;
+    }
+
+    .card {
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--bg-card);
+      transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-fast);
+      box-shadow: 0 4px 20px rgba(15, 23, 42, 0.015);
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+      border-color: var(--border-hover);
+    }
+
+    @keyframes skeleton-pulse {
+      0% { background-color: #eaeef3; }
+      50% { background-color: #f1f5f9; }
+      100% { background-color: #eaeef3; }
+    }
+
+    .thumb {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      display: block;
+      background: #eaeef3;
+      animation: skeleton-pulse 1.8s infinite ease-in-out;
+    }
+
+    .content {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+    }
+
+    .title {
+      margin: 0 0 .6rem;
+      font-size: 1.25rem;
+      font-weight: 700;
+      line-height: 1.35;
+      letter-spacing: -0.01em;
+      color: var(--text-main);
+    }
+
+    .excerpt {
+      color: var(--text-muted);
+      font-size: .95rem;
+      margin: .5rem 0 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.5;
+    }
+
+    .tags {
+      color: var(--text-muted);
+      font-size: .85rem;
+      margin-top: auto;
+      padding-top: 1.25rem;
+    }
+
+    .chip {
+      display: inline-block;
+      background: #f1f5f9;
+      color: #475569;
+      border-radius: 999px;
+      padding: .25rem .75rem;
+      margin-right: .4rem;
+      margin-bottom: .4rem;
+      font-size: .75rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 4rem 1.5rem;
+      color: var(--text-muted);
+      font-size: 1.05rem;
+    }
+
+    /* Carousel Styles */
+    .carousel-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      max-height: 460px;
+      border-radius: 20px;
+      overflow: hidden;
+      margin-bottom: 3rem;
+      box-shadow: 0 12px 35px rgba(15, 23, 42, 0.08);
+      background: #eaeef3;
+    }
+
+    .carousel-slides {
+      display: flex;
+      width: 100%;
+      height: 100%;
+      transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .carousel-slide {
+      position: relative;
+      flex: 0 0 100%;
+      width: 100%;
+      height: 100%;
+    }
+
+    .carousel-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      animation: skeleton-pulse 1.8s infinite ease-in-out;
+    }
+
+    .carousel-overlay {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(to top, rgba(15, 23, 42, 0.92) 0%, rgba(15, 23, 42, 0.5) 55%, rgba(15, 23, 42, 0) 100%);
+      padding: 4rem 3rem 3rem;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: flex-end;
+      height: 100%;
+    }
+
+    .carousel-meta {
+      margin-bottom: 0.5rem;
+    }
+
+    .carousel-chip {
+      background: rgba(255, 255, 255, 0.16);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 999px;
+      padding: 0.25rem 0.8rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .carousel-headline {
+      font-size: 2.25rem;
+      font-weight: 800;
+      margin: 0.5rem 0;
+      line-height: 1.25;
+      max-width: 80%;
+      letter-spacing: -0.03em;
+    }
+
+    .carousel-excerpt {
+      font-size: 1.05rem;
+      color: rgba(241, 245, 249, 0.85);
+      margin: 0 0 1.5rem;
+      max-width: 70%;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.5;
+    }
+
+    .carousel-btn {
+      background: #fff;
+      color: #0f172a;
+      padding: 0.7rem 1.5rem;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      transition: background var(--transition-fast), transform 0.1s;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+    }
+
+    .carousel-btn:hover {
+      background: #f1f5f9;
+    }
+
+    .carousel-btn:active {
+      transform: scale(0.97);
+    }
+
+    .carousel-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.75rem;
+      transition: background var(--transition-fast), transform 0.1s;
+      z-index: 5;
+    }
+
+    .carousel-arrow:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .carousel-arrow:active {
+      transform: translateY(-50%) scale(0.92);
+    }
+
+    .carousel-arrow-prev {
+      left: 1.5rem;
+    }
+
+    .carousel-arrow-next {
+      right: 1.5rem;
+    }
+
+    .carousel-dots {
+      position: absolute;
+      bottom: 1.5rem;
+      right: 3rem;
+      display: flex;
+      gap: 0.6rem;
+      z-index: 5;
+    }
+
+    .carousel-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.35);
+      cursor: pointer;
+      transition: background 0.3s, width 0.3s;
+    }
+
+    .carousel-dot.active {
+      background: #fff;
+      width: 24px;
+      border-radius: 4px;
+    }
+
+    @media (max-width: 768px) {
+      .carousel-container {
+        aspect-ratio: 4 / 3;
+      }
+
+      .carousel-headline {
+        font-size: 1.5rem;
+        max-width: 100%;
+      }
+
+      .carousel-excerpt {
+        display: none;
+      }
+
+      .carousel-overlay {
+        padding: 2rem 1.5rem 1.5rem;
+      }
+
+      .carousel-dots {
+        right: 1.5rem;
+      }
+
+      .carousel-arrow {
+        width: 38px;
+        height: 38px;
+        font-size: 1.4rem;
+      }
+
+      .carousel-arrow-prev {
+        left: 0.75rem;
+      }
+
+      .carousel-arrow-next {
+        right: 0.75rem;
+      }
+    }
+
+    .detail {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .detail h1 {
+      margin: .5rem 0 1rem;
+      font-size: 2.5rem;
+      font-weight: 800;
+      line-height: 1.2;
+      letter-spacing: -0.03em;
+    }
+
+    .detail .hero {
+      width: 100%;
+      max-height: 460px;
+      object-fit: cover;
+      border-radius: 16px;
+      background: #eaeef3;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+      animation: skeleton-pulse 1.8s infinite ease-in-out;
+    }
+
+    .detail .body {
+      font-size: 1.15rem;
+      color: #334155;
+      margin-top: 2rem;
+      line-height: 1.7;
+    }
+
+    .detail .body h1,
+    .detail .body h2,
+    .detail .body h3 {
+      color: var(--text-main);
+      font-weight: 800;
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+      letter-spacing: -0.02em;
+    }
+
+    .detail .body p {
+      margin-bottom: 1.25rem;
+    }
+
+    .detail .body ul,
+    .detail .body ol {
+      margin-bottom: 1.25rem;
+      padding-left: 1.5rem;
+    }
+
+    .detail .body li {
+      margin-bottom: 0.5rem;
+    }
+
+    .detail .body blockquote {
+      border-left: 4px solid var(--accent-color);
+      padding-left: 1.25rem;
+      margin-left: 0;
+      color: var(--text-muted);
+      font-style: italic;
+      background: #f8fafc;
+      padding: 1rem 1.25rem;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .detail .body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 12px;
+      margin: 1.5rem 0;
+    }
+
+    .detail .body code {
+      background: #f1f5f9;
+      padding: 0.2rem 0.4rem;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.9em;
+      color: var(--accent-color);
+    }
+
+    .detail .body pre {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 1.25rem;
+      border-radius: 12px;
+      overflow-x: auto;
+      margin-bottom: 1.25rem;
+    }
+
+    .detail .body pre code {
+      color: inherit;
+      background: none;
+      padding: 0;
+    }
+
+    .back {
+      display: inline-flex;
+      align-items: center;
+      margin: .2rem 0 1.25rem;
+      color: var(--accent-color);
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: color var(--transition-fast);
+    }
+
+    .back:hover {
+      color: var(--accent-hover);
+    }
+
+    .pager {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .pager-link {
+      padding: .75rem 1.25rem;
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--text-main);
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: all var(--transition-fast);
+    }
+
+    .pager-link:hover {
+      border-color: var(--border-hover);
+      background: #f8fafc;
+    }
+
+    .pager-link[aria-disabled="true"] {
+      opacity: .4;
+      pointer-events: none;
+    }
+
+    .comments {
+      margin-top: 3rem;
+      padding: 2rem;
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.01);
+    }
+
+    .comments-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: baseline;
+      margin-bottom: 1.5rem;
+    }
+
+    .comments-title {
+      margin: 0;
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .comments-note {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: .9rem;
+    }
+
+    .comments-list {
+      display: grid;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .comment {
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.25rem;
+      background: #f8fafc;
+    }
+
+    .comment-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: center;
+      margin-bottom: .6rem;
+      color: var(--text-muted);
+      font-size: .85rem;
+    }
+
+    .comment-author {
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .comment-text {
+      margin: 0;
+      white-space: pre-wrap;
+      color: #334155;
+      line-height: 1.5;
+    }
+
+    .comment-pending {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      background: #fffbeb;
+      color: #b45309;
+      padding: .2rem .6rem;
+      font-size: .75rem;
+      border: 1px solid #fef3c7;
+      font-weight: 600;
+    }
+
+    .comments-empty,
+    .comments-status {
+      color: var(--text-muted);
+      font-size: .95rem;
+    }
+
+    .comment-form {
+      display: grid;
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+    }
+
+    .comment-form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .comment-form label {
+      display: grid;
+      gap: .4rem;
+      font-size: .85rem;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    .comment-form input,
+    .comment-form textarea {
+      width: 100%;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: .8rem 1rem;
+      font: inherit;
+      background: #fff;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .comment-form input:focus,
+    .comment-form textarea:focus {
+      outline: none;
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+    }
+
+    .comment-form textarea {
+      min-height: 140px;
+      resize: vertical;
+      grid-column: 1 / -1;
+    }
+
+    .comment-form-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .comment-button {
+      border: 0;
+      border-radius: 999px;
+      padding: .8rem 1.5rem;
+      background: var(--accent-color);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background var(--transition-fast), transform 0.1s;
+    }
+
+    .comment-button:hover {
+      background: var(--accent-hover);
+    }
+
+    .comment-button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+
     @media (max-width: 720px) {
-      .comment-form-grid { grid-template-columns: 1fr; }
-      .comments-header, .comment-form-actions { flex-direction: column; align-items: stretch; }
-      .pager { flex-direction: column; }
+      .comment-form-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .comments-header,
+      .comment-form-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .pager {
+        flex-direction: column;
+      }
+    }
+
+    .pager {
+      flex-direction: column;
+    }
+    }
+
+    /* Login Page Styles */
+    #auth-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #fafafa;
+      padding: 1rem;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 400px;
+      padding: 2.5rem;
+      background: #fff;
+      border: 1px solid #eaeaea;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.03);
+      text-align: center;
+    }
+
+    .auth-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin: 0 0 0.5rem;
+      letter-spacing: -0.025em;
+    }
+
+    .auth-subtitle {
+      color: #666;
+      font-size: 0.95rem;
+      margin: 0 0 2rem;
+    }
+
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .auth-field {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.35rem;
+    }
+
+    .auth-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .auth-input {
+      width: 100%;
+      border: 1px solid #d8dfe6;
+      border-radius: 10px;
+      padding: 0.75rem 0.85rem;
+      font: inherit;
+      background: #fff;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .auth-input:focus {
+      outline: none;
+      border-color: #111;
+      box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .auth-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 0.85rem 1.25rem;
+      background: #111;
+      color: #fff;
+      font-weight: 650;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .auth-button:hover {
+      background: #222;
+    }
+
+    .auth-button:active {
+      transform: scale(0.98);
+    }
+
+    .auth-switch {
+      margin-top: 1.5rem;
+      font-size: 0.9rem;
+      color: #666;
+    }
+
+    .auth-switch-btn {
+      background: none;
+      border: none;
+      color: #0a58ca;
+      font-weight: 600;
+      padding: 0;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .auth-switch-btn:hover {
+      text-decoration: underline;
+    }
+
+    .auth-error {
+      color: #a21d1d;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+      text-align: left;
+    }
+
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.9rem;
+    }
+
+    .logout-button {
+      background: none;
+      border: 1px solid #dfe5ec;
+      border-radius: 999px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .logout-button:hover {
+      background: #f5f7fa;
+    }
+
+    .google-auth-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      border: 1px solid #d8dfe6;
+      border-radius: 999px;
+      padding: 0.85rem 1.25rem;
+      background: #fff;
+      color: #333;
+      font-weight: 650;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: background-color 0.2s, border-color 0.2s;
+      width: 100%;
+    }
+
+    .google-auth-button:hover {
+      background: #f8f9fa;
+      border-color: #c3cbd4;
+    }
+
+    .google-icon {
+      flex-shrink: 0;
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      color: #888;
+      font-size: 0.85rem;
+      margin: 0.75rem 0;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid #eaeaea;
+    }
+
+    .divider:not(:empty)::before {
+      margin-right: .75em;
+    }
+
+    .divider:not(:empty)::after {
+      margin-left: .75em;
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
+
 <body>
-  <header>
-    <div class="container">
-      <h1>News Stories</h1>
-    </div>
-  </header>
-  <main>
-    <div id="list-view">
-      <div id="list" class="grid"></div>
-      <div id="empty" class="empty" hidden>No stories yet.</div>
-    </div>
-    <div id="detail-view" class="detail" hidden>
-      <a id="back-link" class="back" href="#/">← Back to stories</a>
-      <h1 id="d-title"></h1>
-      <div id="d-tags"></div>
-      <img id="d-image" class="hero" alt="">
-      <div id="d-body" class="body"></div>
-      <div id="pager" class="pager">
-        <a id="prev-link" class="pager-link" href="#/" aria-disabled="true">Previous story</a>
-        <a id="next-link" class="pager-link" href="#/" aria-disabled="true">Next story</a>
-      </div>
-      <section id="comments-section" class="comments" hidden>
-        <div class="comments-header">
-          <div>
-            <h2 class="comments-title" id="comments-title">Comments</h2>
-            <p class="comments-note">Comments are reviewed before they appear publicly.</p>
-          </div>
+
+  <!-- Auth Screen -->
+  <div id="auth-container">
+    <div class="auth-card">
+      <h2 id="auth-title" class="auth-title">Sign In</h2>
+      <p id="auth-subtitle" class="auth-subtitle">Welcome back! Please enter your details.</p>
+
+      <form id="auth-form" class="auth-form">
+        <div class="auth-field">
+          <label class="auth-label" for="auth-email">Email</label>
+          <input id="auth-email" class="auth-input" type="email" required placeholder="your@email.com"
+            autocomplete="email">
         </div>
-        <div id="comments-list" class="comments-list"></div>
-        <div id="comments-empty" class="comments-empty" hidden>No approved comments yet.</div>
-        <form id="comment-form" class="comment-form">
-          <div class="comment-form-grid">
-            <label>
-              Name
-              <input id="comment-author" name="author" type="text" maxlength="120" autocomplete="name" placeholder="Your name">
-            </label>
-            <label>
-              Email
-              <input id="comment-email" name="email" type="email" maxlength="200" autocomplete="email" placeholder="name@example.com">
-            </label>
-            <label>
-              Website
-              <input id="comment-url" name="url" type="url" maxlength="500" placeholder="https://example.com">
-            </label>
-            <label style="grid-column: 1 / -1;">
-              Comment
-              <textarea id="comment-text" name="text" maxlength="4000" required placeholder="Write your comment..."></textarea>
-            </label>
-          </div>
-          <div class="comment-form-actions">
-            <button id="comment-submit" class="comment-button" type="submit">Post comment</button>
-            <div id="comment-status" class="comments-status" aria-live="polite"></div>
-          </div>
-        </form>
-      </section>
+        <div class="auth-field">
+          <label class="auth-label" for="auth-password">Password</label>
+          <input id="auth-password" class="auth-input" type="password" required placeholder="••••••••"
+            autocomplete="current-password">
+        </div>
+        <div id="auth-error-msg" class="auth-error" hidden></div>
+        <button id="auth-submit" class="auth-button" type="submit">Sign In</button>
+      </form>
+
+      <div class="divider">or</div>
+
+      <button id="google-auth-btn" class="google-auth-button" type="button">
+        <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            fill="#4285F4" />
+          <path
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            fill="#34A853" />
+          <path
+            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+            fill="#FBBC05" />
+          <path
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+            fill="#EA4335" />
+        </svg>
+        Sign in with Google
+      </button>
+
+      <div class="auth-switch">
+        <span id="auth-switch-text">Don't have an account?</span>
+        <button id="auth-switch-btn" class="auth-switch-btn">Sign Up</button>
+      </div>
     </div>
-  </main>
-  <script>
+  </div>
+
+  <!-- Main App -->
+  <div id="app-container" style="display: none;">
+    <header>
+      <div class="container" style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>News Stories</h1>
+        <div id="header-user" class="user-badge">
+          <span id="user-email"></span>
+          <button id="logout-btn" class="logout-button">Sign Out</button>
+        </div>
+      </div>
+    </header>
+    <main>
+      <div id="list-view">
+        <div id="carousel-container" class="carousel-container" style="display: none;">
+          <div id="carousel-slides" class="carousel-slides"></div>
+          <button class="carousel-arrow carousel-arrow-prev" id="carousel-prev" aria-label="Previous slide">‹</button>
+          <button class="carousel-arrow carousel-arrow-next" id="carousel-next" aria-label="Next slide">›</button>
+          <div id="carousel-dots" class="carousel-dots"></div>
+        </div>
+        <div id="list" class="grid"></div>
+        <div id="empty" class="empty" hidden>No stories yet.</div>
+      </div>
+      <div id="detail-view" class="detail" hidden>
+        <a id="back-link" class="back" href="#/">← Back to stories</a>
+        <h1 id="d-title"></h1>
+        <div id="d-tags"></div>
+        <img id="d-image" class="hero" alt="">
+        <div id="d-body" class="body"></div>
+        <div id="pager" class="pager">
+          <a id="prev-link" class="pager-link" href="#/" aria-disabled="true">Previous story</a>
+          <a id="next-link" class="pager-link" href="#/" aria-disabled="true">Next story</a>
+        </div>
+        <section id="comments-section" class="comments" hidden>
+          <div class="comments-header">
+            <div>
+              <h2 class="comments-title" id="comments-title">Comments</h2>
+              <p class="comments-note">Comments are reviewed before they appear publicly.</p>
+            </div>
+          </div>
+          <div id="comments-list" class="comments-list"></div>
+          <div id="comments-empty" class="comments-empty" hidden>No approved comments yet.</div>
+          <form id="comment-form" class="comment-form">
+            <div class="comment-form-grid">
+              <label>
+                Name
+                <input id="comment-author" name="author" type="text" maxlength="120" autocomplete="name"
+                  placeholder="Your name">
+              </label>
+              <label>
+                Email
+                <input id="comment-email" name="email" type="email" maxlength="200" autocomplete="email"
+                  placeholder="name@example.com">
+              </label>
+              <label>
+                Website
+                <input id="comment-url" name="url" type="url" maxlength="500" placeholder="https://example.com">
+              </label>
+              <label style="grid-column: 1 / -1;">
+                Comment
+                <textarea id="comment-text" name="text" maxlength="4000" required
+                  placeholder="Write your comment..."></textarea>
+              </label>
+            </div>
+            <div class="comment-form-actions">
+              <button id="comment-submit" class="comment-button" type="submit">Post comment</button>
+              <div id="comment-status" class="comments-status" aria-live="polite"></div>
+            </div>
+          </form>
+        </section>
+      </div>
+    </main>
+  </div>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-analytics.js";
+
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyA1f75PF4SmqC_RDZZJ_C-whh_Fn4EhztE",
+      authDomain: "rocktest-cc720.firebaseapp.com",
+      projectId: "rocktest-cc720",
+      storageBucket: "rocktest-cc720.firebasestorage.app",
+      messagingSenderId: "678956067500",
+      appId: "1:678956067500:web:52a5027adc82bb2ec9cd09",
+      measurementId: "G-6LCNSJ9HV8"
+    };
+
+    let auth = null;
+    let analytics = null;
+    try {
+      if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        analytics = getAnalytics(app);
+      }
+    } catch (e) {
+      console.error("Firebase Initialization Error:", e);
+    }
+
     let cachedStories = null;
     const pendingCommentsByPath = new Map();
     const approvedCommentsByPath = new Map();
     let currentCommentPath = '';
+
+    // Auth State UI Updates
+    function updateAuthState(user) {
+      const authContainer = document.getElementById('auth-container');
+      const appContainer = document.getElementById('app-container');
+      const userEmailSpan = document.getElementById('user-email');
+
+      if (user) {
+        authContainer.style.display = 'none';
+        appContainer.style.display = 'block';
+        userEmailSpan.textContent = user.email;
+        // Trigger initial data load and route
+        router();
+      } else {
+        authContainer.style.display = 'flex';
+        appContainer.style.display = 'none';
+        userEmailSpan.textContent = '';
+      }
+    }
+
+    // Handle Authentication State Change
+    if (auth) {
+      onAuthStateChanged(auth, (user) => {
+        updateAuthState(user);
+      });
+    } else {
+      // Mock / fallback auth to allow testing until Firebase is set up
+      console.log("Firebase is not initialized. Using developer mock mode. Enter any email and password to log in.");
+      const mockUserKey = 'rocktest_mock_user';
+      const savedUser = localStorage.getItem(mockUserKey);
+      if (savedUser) {
+        updateAuthState(JSON.parse(savedUser));
+      } else {
+        updateAuthState(null);
+      }
+
+      window.mockLogin = (email, password) => {
+        const user = { email: email };
+        localStorage.setItem(mockUserKey, JSON.stringify(user));
+        updateAuthState(user);
+        return Promise.resolve(user);
+      };
+      window.mockRegister = (email, password) => {
+        const user = { email: email };
+        localStorage.setItem(mockUserKey, JSON.stringify(user));
+        updateAuthState(user);
+        return Promise.resolve(user);
+      };
+      window.mockLogout = () => {
+        localStorage.removeItem(mockUserKey);
+        updateAuthState(null);
+        return Promise.resolve();
+      };
+    }
+
+    // Auth Form Logic
+    let isSignUpMode = false;
+    const authForm = document.getElementById('auth-form');
+    const authTitle = document.getElementById('auth-title');
+    const authSubtitle = document.getElementById('auth-subtitle');
+    const authSubmitBtn = document.getElementById('auth-submit');
+    const authSwitchBtn = document.getElementById('auth-switch-btn');
+    const authSwitchText = document.getElementById('auth-switch-text');
+    const authErrorMsg = document.getElementById('auth-error-msg');
+
+    authSwitchBtn.addEventListener('click', () => {
+      isSignUpMode = !isSignUpMode;
+      authErrorMsg.hidden = true;
+      if (isSignUpMode) {
+        authTitle.textContent = 'Create Account';
+        authSubtitle.textContent = 'Join us! Sign up for a new account.';
+        authSubmitBtn.textContent = 'Sign Up';
+        authSwitchText.textContent = 'Already have an account?';
+        authSwitchBtn.textContent = 'Sign In';
+      } else {
+        authTitle.textContent = 'Sign In';
+        authSubtitle.textContent = 'Welcome back! Please enter your details.';
+        authSubmitBtn.textContent = 'Sign In';
+        authSwitchText.textContent = "Don't have an account?";
+        authSwitchBtn.textContent = 'Sign Up';
+      }
+    });
+
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      authErrorMsg.hidden = true;
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+      authSubmitBtn.disabled = true;
+
+      try {
+        if (auth) {
+          if (isSignUpMode) {
+            await createUserWithEmailAndPassword(auth, email, password);
+          } else {
+            await signInWithEmailAndPassword(auth, email, password);
+          }
+        } else {
+          // Dev Mock fallback
+          if (isSignUpMode) {
+            await window.mockRegister(email, password);
+          } else {
+            await window.mockLogin(email, password);
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        authErrorMsg.textContent = err.message || 'Authentication failed.';
+        authErrorMsg.hidden = false;
+      } finally {
+        authSubmitBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      try {
+        if (auth) {
+          await signOut(auth);
+        } else {
+          await window.mockLogout();
+        }
+      } catch (err) {
+        console.error("Logout failed:", err);
+      }
+    });
+
+    document.getElementById('google-auth-btn').addEventListener('click', async () => {
+      authErrorMsg.hidden = true;
+      try {
+        if (auth) {
+          const provider = new GoogleAuthProvider();
+          await signInWithPopup(auth, provider);
+        } else {
+          // Dev Mock fallback
+          await window.mockLogin('google-user@example.com', '');
+        }
+      } catch (err) {
+        console.error("Google Auth failed:", err);
+        authErrorMsg.textContent = err.message || 'Google authentication failed.';
+        authErrorMsg.hidden = false;
+      }
+    });
+
     async function fetchStoriesData() {
       const sources = ['/api/stories', 'data.json'];
       for (const url of sources) {
@@ -137,7 +1188,7 @@
           if (Array.isArray(data)) {
             return data;
           }
-        } catch (e) {}
+        } catch (e) { }
       }
       return [];
     }
@@ -173,6 +1224,7 @@
       });
     }
 
+    // Helper functions for comments
     function getPendingComments(path) {
       return pendingCommentsByPath.get(path) || [];
     }
@@ -286,7 +1338,7 @@
         if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
           return parsed.message;
         }
-      } catch (error) {}
+      } catch (error) { }
 
       return rawText;
     }
@@ -297,6 +1349,8 @@
       card.className = 'card';
       const img = document.createElement('img');
       img.className = 'thumb';
+      img.loading = 'lazy';
+      img.decoding = 'async';
       if (s.image_url) {
         img.src = s.image_url;
         img.alt = s.excerpt || s.headline || 'story image';
@@ -330,6 +1384,146 @@
       a.appendChild(card);
       return a;
     }
+    let carouselInterval = null;
+    let currentSlideIdx = 0;
+
+    function renderCarousel(stories) {
+      const container = document.getElementById('carousel-container');
+      const slides = document.getElementById('carousel-slides');
+      const dots = document.getElementById('carousel-dots');
+
+      // Clear previous
+      slides.innerHTML = '';
+      dots.innerHTML = '';
+      if (carouselInterval) {
+        clearInterval(carouselInterval);
+        carouselInterval = null;
+      }
+
+      // We feature the first 3 stories
+      const featured = stories.slice(0, 3);
+      if (featured.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+      container.style.display = 'block';
+
+      featured.forEach((story, idx) => {
+        // Build slide
+        const slide = document.createElement('div');
+        slide.className = 'carousel-slide';
+
+        const img = document.createElement('img');
+        img.className = 'carousel-image';
+        if (idx === 0) {
+          img.setAttribute('fetchpriority', 'high');
+        } else {
+          img.loading = 'lazy';
+        }
+        img.decoding = 'async';
+        img.src = story.image_url || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1200&q=80';
+        img.alt = story.headline || 'Featured story';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'carousel-overlay';
+
+        const meta = document.createElement('div');
+        meta.className = 'carousel-meta';
+        const chip = document.createElement('span');
+        chip.className = 'carousel-chip';
+        chip.textContent = story.category || 'Featured';
+        meta.appendChild(chip);
+
+        const h2 = document.createElement('h2');
+        h2.className = 'carousel-headline';
+        h2.textContent = story.headline || '';
+
+        const excerpt = document.createElement('p');
+        excerpt.className = 'carousel-excerpt';
+        let ex = story.excerpt && story.excerpt.trim() ? story.excerpt : (story.body || '').slice(0, 150);
+        ex = ex.replace(/[#*`_\[\]()]/g, '');
+        excerpt.textContent = ex;
+
+        const link = document.createElement('a');
+        link.className = 'carousel-btn';
+        link.href = '#/story/' + encodeURIComponent(story.slug || '');
+        link.textContent = 'Read Story';
+
+        overlay.appendChild(meta);
+        overlay.appendChild(h2);
+        overlay.appendChild(excerpt);
+        overlay.appendChild(link);
+
+        slide.appendChild(img);
+        slide.appendChild(overlay);
+        slides.appendChild(slide);
+
+        // Build dot
+        const dot = document.createElement('span');
+        dot.className = 'carousel-dot' + (idx === 0 ? ' active' : '');
+        dot.addEventListener('click', () => {
+          goToSlide(idx);
+          resetCarouselTimer();
+        });
+        dots.appendChild(dot);
+      });
+
+      currentSlideIdx = 0;
+      updateCarouselPosition();
+      startCarouselTimer();
+    }
+
+    function updateCarouselPosition() {
+      const slides = document.getElementById('carousel-slides');
+      const dots = document.querySelectorAll('.carousel-dot');
+      if (!slides) return;
+      slides.style.transform = `translateX(-${currentSlideIdx * 100}%)`;
+
+      dots.forEach((dot, idx) => {
+        if (idx === currentSlideIdx) {
+          dot.classList.add('active');
+        } else {
+          dot.classList.remove('active');
+        }
+      });
+    }
+
+    function goToSlide(idx) {
+      const slides = document.querySelectorAll('.carousel-slide');
+      if (slides.length === 0) return;
+      if (idx >= slides.length) {
+        currentSlideIdx = 0;
+      } else if (idx < 0) {
+        currentSlideIdx = slides.length - 1;
+      } else {
+        currentSlideIdx = idx;
+      }
+      updateCarouselPosition();
+    }
+
+    function startCarouselTimer() {
+      carouselInterval = setInterval(() => {
+        goToSlide(currentSlideIdx + 1);
+      }, 5000);
+    }
+
+    function resetCarouselTimer() {
+      if (carouselInterval) {
+        clearInterval(carouselInterval);
+        startCarouselTimer();
+      }
+    }
+
+    // Attach click events to carousel arrows
+    document.getElementById('carousel-prev').addEventListener('click', () => {
+      goToSlide(currentSlideIdx - 1);
+      resetCarouselTimer();
+    });
+    document.getElementById('carousel-next').addEventListener('click', () => {
+      goToSlide(currentSlideIdx + 1);
+      resetCarouselTimer();
+    });
+
     async function loadStories() {
       const list = document.getElementById('list');
       const empty = document.getElementById('empty');
@@ -341,9 +1535,11 @@
         const items = Array.isArray(cachedStories) ? cachedStories : [];
         if (items.length === 0) {
           empty.hidden = false;
+          document.getElementById('carousel-container').style.display = 'none';
           return;
         }
         empty.hidden = true;
+        renderCarousel(items);
         for (const s of items) {
           list.appendChild(buildCard(s));
         }
@@ -360,7 +1556,7 @@
           if (res.ok) {
             s = await res.json();
           }
-        } catch (e) {}
+        } catch (e) { }
 
         if (!s) {
           if (!cachedStories) {
@@ -385,9 +1581,7 @@
         }
         const img = document.getElementById('d-image');
         if (s.image_url) {
-          // const fixedUrl = String(s.image_url).replace('download', 'view');
           img.src = s.image_url;
-          // img.src = "https://drive.google.com/uc?id=1U51LlSL2XaSrE_2Q12-tO_PAgEFWgX79&export=download"
           img.alt = s.excerpt || s.headline || 'story image';
           img.style.display = '';
         } else {
@@ -405,7 +1599,7 @@
         if (!cachedStories) {
           try {
             cachedStories = await fetchStoriesData();
-          } catch {}
+          } catch { }
         }
         const prevLink = document.getElementById('prev-link');
         const nextLink = document.getElementById('next-link');
@@ -505,7 +1699,8 @@
       }
     });
     window.addEventListener('hashchange', router);
-    router();
+    // Note: router() is now called when authentication status resolves (either Firebase auth or mock)
   </script>
 </body>
+
 </html>
