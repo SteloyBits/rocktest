@@ -10,7 +10,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from supabase import create_client
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, auth as firebase_auth
 
 # Load environment variables from the parent directory's .env file
 dotenv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env')
@@ -61,9 +61,35 @@ def generate_id():
 app = Flask(__name__, static_folder='.')
 CORS(app)
 
-# Helper to verify x-admin-token (disabled for now)
+# Helper to verify x-admin-token
 def verify_admin_token():
-    return True
+    token = request.headers.get('x-admin-token')
+    if not token:
+        return False
+        
+    # 1. Check if token matches standard ADMIN_TOKEN env variable
+    expected = os.environ.get('ADMIN_TOKEN')
+    if expected and token == expected:
+        return True
+
+    # 2. Check if token is 'bypass' (only allowed if Firebase is NOT configured)
+    if token == 'bypass':
+        if not is_firebase_configured():
+            return True
+        else:
+            return False
+
+    # 3. If Firebase is configured, verify it as a Firebase ID Token
+    if is_firebase_configured():
+        try:
+            app = firebase_admin.get_app('admin_app') if 'admin_app' in firebase_admin._apps else None
+            decoded_token = firebase_auth.verify_id_token(token, app=app)
+            return True
+        except Exception as e:
+            print(f"Firebase token verification failed in admin server: {e}")
+            return False
+
+    return False
 
 # Serve frontend files
 @app.route('/')

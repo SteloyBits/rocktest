@@ -50,6 +50,7 @@
       border-radius: 24px;
       padding: 3rem 2.5rem;
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+      transition: transform var(--transition-fast);
     }
 
     .header {
@@ -117,6 +118,10 @@
       cursor: pointer;
       transition: all var(--transition-fast);
       margin-top: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
     }
 
     .submit-btn:hover {
@@ -126,6 +131,12 @@
 
     .submit-btn:active {
       transform: translateY(0);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      transform: none;
     }
 
     .divider {
@@ -186,6 +197,43 @@
       margin-bottom: 1.25rem;
       display: none;
     }
+
+    .requirements-box {
+      display: none;
+      text-align: left;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid var(--border-color);
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+    }
+
+    .requirements-title {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      color: #f3f4f6;
+    }
+
+    .req-item {
+      transition: color var(--transition-fast);
+      margin-top: 0.15rem;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s ease-in-out infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 
@@ -206,8 +254,20 @@
       <div class="form-group">
         <label for="password">Password</label>
         <input type="password" id="password" class="form-input" required placeholder="••••••••" autocomplete="current-password">
+        
+        <div id="password-requirements" class="requirements-box">
+          <div class="requirements-title">Password requirements:</div>
+          <div id="req-length" class="req-item">• At least 8 characters</div>
+          <div id="req-upper" class="req-item">• At least one uppercase letter</div>
+          <div id="req-lower" class="req-item">• At least one lowercase letter</div>
+          <div id="req-number" class="req-item">• At least one number</div>
+          <div id="req-special" class="req-item">• At least one special character (@$!%*?&_#)</div>
+        </div>
       </div>
-      <button type="submit" id="submit-btn" class="submit-btn">Sign In</button>
+      <button type="submit" id="submit-btn" class="submit-btn">
+        <span class="spinner" id="btn-spinner"></span>
+        <span id="btn-text">Sign In</span>
+      </button>
     </form>
 
     <div class="divider">or</div>
@@ -221,11 +281,16 @@
       </svg>
       Sign in with Google
     </button>
+
+    <div class="auth-switch" style="margin-top: 1.5rem; text-align: center; font-size: 0.9rem; color: var(--text-muted);">
+      <span id="auth-switch-text">Don't have an account?</span>
+      <button id="auth-switch-btn" type="button" style="background: none; border: none; color: var(--accent-color); font-weight: 700; cursor: pointer; font-family: inherit; font-size: 0.9rem;">Sign Up</button>
+    </div>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
     // 1. Resolve API host. The API is hosted on the same origin or falls back to localhost:3000
     const API_HOST = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
@@ -255,10 +320,15 @@
 
     // 3. Monitor auth state
     if (auth) {
-      onAuthStateChanged(auth, (user) => {
+      onAuthStateChanged(auth, async (user) => {
         if (user) {
-          localStorage.setItem('admin_token', 'bypass');
-          window.location.href = 'index.html';
+          try {
+            const token = await user.getIdToken();
+            localStorage.setItem('admin_token', token);
+            window.location.href = 'index.html';
+          } catch (e) {
+            console.error("Failed to fetch ID Token:", e);
+          }
         }
       });
     } else {
@@ -271,55 +341,126 @@
 
     const form = document.getElementById('login-form');
     const submitBtn = document.getElementById('submit-btn');
+    const btnSpinner = document.getElementById('btn-spinner');
+    const btnText = document.getElementById('btn-text');
     const errorMsg = document.getElementById('error-msg');
     const googleBtn = document.getElementById('google-btn');
+    
+    const authSwitchBtn = document.getElementById('auth-switch-btn');
+    const authSwitchText = document.getElementById('auth-switch-text');
+    const subtitle = document.querySelector('.subtitle');
+    const passwordRequirements = document.getElementById('password-requirements');
+    const passwordInput = document.getElementById('password');
+
+    let isSignUpMode = false;
 
     function showError(text) {
       errorMsg.textContent = text;
       errorMsg.style.display = 'block';
     }
 
+    // Toggle Sign In / Sign Up Mode
+    authSwitchBtn.addEventListener('click', () => {
+      isSignUpMode = !isSignUpMode;
+      errorMsg.style.display = 'none';
+      if (isSignUpMode) {
+        subtitle.textContent = "Create an admin account to manage content";
+        btnText.textContent = "Sign Up";
+        authSwitchText.textContent = "Already have an account?";
+        authSwitchBtn.textContent = "Sign In";
+        passwordRequirements.style.display = 'block';
+      } else {
+        subtitle.textContent = "Log in to manage your content dashboard";
+        btnText.textContent = "Sign In";
+        authSwitchText.textContent = "Don't have an account?";
+        authSwitchBtn.textContent = "Sign Up";
+        passwordRequirements.style.display = 'none';
+      }
+      validatePasswordStrength();
+    });
+
+    function validatePasswordStrength() {
+      if (!isSignUpMode) return true;
+      const val = passwordInput.value;
+      
+      const lenValid = val.length >= 8;
+      const upperValid = /[A-Z]/.test(val);
+      const lowerValid = /[a-z]/.test(val);
+      const numValid = /[0-9]/.test(val);
+      const specValid = /[@$!%*?&_#^]/.test(val);
+
+      document.getElementById('req-length').style.color = lenValid ? '#34d399' : '#fca5a5';
+      document.getElementById('req-upper').style.color = upperValid ? '#34d399' : '#fca5a5';
+      document.getElementById('req-lower').style.color = lowerValid ? '#34d399' : '#fca5a5';
+      document.getElementById('req-number').style.color = numValid ? '#34d399' : '#fca5a5';
+      document.getElementById('req-special').style.color = specValid ? '#34d399' : '#fca5a5';
+
+      return lenValid && upperValid && lowerValid && numValid && specValid;
+    }
+
+    passwordInput.addEventListener('input', validatePasswordStrength);
+
+    // Form submission
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       errorMsg.style.display = 'none';
-      submitBtn.disabled = true;
-
+      
       const email = document.getElementById('email').value.trim();
-      const password = document.getElementById('password').value;
+      const password = passwordInput.value;
+
+      if (isSignUpMode && !validatePasswordStrength()) {
+        showError("Your password is too weak. Please meet all complexity requirements.");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      btnSpinner.style.display = 'inline-block';
+      btnText.textContent = isSignUpMode ? "Creating Account..." : "Authenticating...";
 
       try {
         if (auth) {
-          await signInWithEmailAndPassword(auth, email, password);
+          if (isSignUpMode) {
+            await createUserWithEmailAndPassword(auth, email, password);
+          } else {
+            await signInWithEmailAndPassword(auth, email, password);
+          }
+          // Fetch token and redirect
+          const token = await auth.currentUser.getIdToken();
+          localStorage.setItem('admin_token', token);
         } else {
           // Dev Mock Mode login
           localStorage.setItem('rocktest_mock_admin_user', JSON.stringify({ email }));
+          localStorage.setItem('admin_token', 'bypass');
         }
 
-        // Store a bypass token to satisfy any local storage checks
-        localStorage.setItem('admin_token', 'bypass');
         window.location.href = 'index.html';
       } catch (err) {
         showError(err.message || "Authentication failed. Please verify credentials.");
-      } finally {
         submitBtn.disabled = false;
+        btnSpinner.style.display = 'none';
+        btnText.textContent = isSignUpMode ? "Sign Up" : "Sign In";
       }
     });
 
     googleBtn.addEventListener('click', async () => {
       errorMsg.style.display = 'none';
+      googleBtn.disabled = true;
       
       try {
         if (auth) {
           const provider = new GoogleAuthProvider();
           await signInWithPopup(auth, provider);
+          const token = await auth.currentUser.getIdToken();
+          localStorage.setItem('admin_token', token);
         } else {
           localStorage.setItem('rocktest_mock_admin_user', JSON.stringify({ email: 'google-admin@example.com' }));
+          localStorage.setItem('admin_token', 'bypass');
         }
 
-        localStorage.setItem('admin_token', 'bypass');
         window.location.href = 'index.html';
       } catch (err) {
         showError(err.message || "Google Authentication failed.");
+        googleBtn.disabled = false;
       }
     });
   </script>

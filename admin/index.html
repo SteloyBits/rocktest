@@ -505,7 +505,7 @@
   </style>
 </head>
 
-<body>
+<body style="display: none;">
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="sidebar-brand">ROCKTEST ADMIN</div>
@@ -746,8 +746,15 @@
         if (!user) {
           window.location.href = 'login.html';
         } else {
-          userDisplay.textContent = user.email;
-          initializeDashboard();
+          user.getIdToken().then(token => {
+            localStorage.setItem('admin_token', token);
+            userDisplay.textContent = user.email;
+            document.body.style.display = 'flex';
+            initializeDashboard();
+          }).catch(err => {
+            console.error("Failed to get Firebase ID Token:", err);
+            window.location.href = 'login.html';
+          });
         }
       });
     } else {
@@ -756,7 +763,9 @@
       if (!mockUser) {
         window.location.href = 'login.html';
       } else {
+        localStorage.setItem('admin_token', 'bypass');
         userDisplay.textContent = JSON.parse(mockUser).email + " (Dev Mode)";
+        document.body.style.display = 'flex';
         initializeDashboard();
       }
     }

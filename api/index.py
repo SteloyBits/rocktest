@@ -10,7 +10,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, auth as firebase_auth
 
 load_dotenv()
 
@@ -44,6 +44,33 @@ except Exception as e:
 
 def is_firebase_configured():
     return firebase_client_configured and db is not None
+
+def verify_admin_token(token):
+    if not token:
+        return False
+        
+    # 1. Check if token matches standard ADMIN_TOKEN env variable
+    expected = os.environ.get('ADMIN_TOKEN')
+    if expected and token == expected:
+        return True
+
+    # 2. Check if token is 'bypass' (only allowed if Firebase is NOT configured)
+    if token == 'bypass':
+        if not is_firebase_configured():
+            return True
+        else:
+            return False
+
+    # 3. If Firebase is configured, verify it as a Firebase ID Token
+    if is_firebase_configured():
+        try:
+            decoded_token = firebase_auth.verify_id_token(token)
+            return True
+        except Exception as e:
+            print(f"Firebase token verification failed in main API: {e}")
+            return False
+
+    return False
 
 app = Flask(__name__, static_folder='..')
 CORS(app)
@@ -431,6 +458,9 @@ def create_comment():
 @app.route('/api/stories', methods=['POST'])
 def create_story():
     try:
+        token = request.headers.get('x-admin-token')
+        if not verify_admin_token(token):
+            return jsonify({"error": "Forbidden"}), 403
         supabase = get_supabase_client()
         data = request.get_json()
         if not data:
@@ -454,6 +484,9 @@ def create_story():
 @app.route('/api/stories', methods=['DELETE'])
 def delete_stories():
     try:
+        token = request.headers.get('x-admin-token')
+        if not verify_admin_token(token):
+            return jsonify({"error": "Forbidden"}), 403
         supabase = get_supabase_client()
         response = supabase.table('stories').select('id').execute()
         count = len(response.data)
@@ -468,11 +501,10 @@ def delete_stories():
 @app.route('/api/reset', methods=['POST', 'DELETE'])
 def reset_stories():
     try:
-        supabase = get_supabase_client()
         token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
+        if not verify_admin_token(token):
             return jsonify({"error": "Forbidden"}), 403
+        supabase = get_supabase_client()
         
         response = supabase.table('stories').select('id').execute()
         count = len(response.data)
@@ -489,8 +521,7 @@ def reset_stories():
 def admin_normalize_tags():
     try:
         token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
+        if not verify_admin_token(token):
             return jsonify({"error": "Forbidden"}), 403
 
         supabase = get_supabase_client()
@@ -535,8 +566,7 @@ def admin_normalize_tags():
 def admin_get_comments():
     try:
         token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
+        if not verify_admin_token(token):
             return jsonify({"error": "Forbidden"}), 403
 
         if is_firebase_configured():
@@ -572,8 +602,7 @@ def admin_get_comments():
 def admin_moderate_comment():
     try:
         token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
+        if not verify_admin_token(token):
             return jsonify({"error": "Forbidden"}), 403
 
         data = request.get_json()
@@ -639,8 +668,7 @@ def admin_moderate_comment():
 def delete_story(id):
     try:
         token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
+        if not verify_admin_token(token):
             return jsonify({"error": "Forbidden"}), 403
 
         supabase = get_supabase_client()
@@ -658,8 +686,7 @@ def delete_story(id):
 def update_story(id):
     try:
         token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
+        if not verify_admin_token(token):
             return jsonify({"error": "Forbidden"}), 403
 
         data = request.get_json()
