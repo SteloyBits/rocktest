@@ -686,10 +686,7 @@
       }
     }
 
-    .pager {
-      flex-direction: column;
-    }
-    }
+
 
     /* Login Page Styles */
     #auth-container {
@@ -1008,21 +1005,21 @@
     import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-analytics.js";
 
-    // Your web app's Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyA1f75PF4SmqC_RDZZJ_C-whh_Fn4EhztE",
-      authDomain: "rocktest-cc720.firebaseapp.com",
-      projectId: "rocktest-cc720",
-      storageBucket: "rocktest-cc720.firebasestorage.app",
-      messagingSenderId: "678956067500",
-      appId: "1:678956067500:web:52a5027adc82bb2ec9cd09",
-      measurementId: "G-6LCNSJ9HV8"
-    };
+    // Fetch Firebase configuration dynamically from backend
+    let firebaseConfig = {};
+    try {
+      const response = await fetch('/api/config');
+      if (response.ok) {
+        firebaseConfig = await response.json();
+      }
+    } catch (err) {
+      console.error("Failed to load Firebase configuration:", err);
+    }
 
     let auth = null;
     let analytics = null;
     try {
-      if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+      if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "FIREBASE_API_KEY") {
         const app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         analytics = getAnalytics(app);

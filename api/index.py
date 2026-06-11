@@ -9,8 +9,41 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from supabase import create_client, Client
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 load_dotenv()
+
+# Initialize Firebase Admin
+db = None
+firebase_client_configured = False
+
+try:
+    firebase_project_id = os.environ.get('FIREBASE_PROJECT_ID')
+    firebase_client_email = os.environ.get('FIREBASE_CLIENT_EMAIL')
+    firebase_private_key = os.environ.get('FIREBASE_PRIVATE_KEY')
+
+    if firebase_project_id and firebase_client_email and firebase_private_key:
+        # Format the private key to handle escaped newlines
+        formatted_private_key = firebase_private_key.replace('\\n', '\n')
+        
+        cred = credentials.Certificate({
+            "type": "service_account",
+            "project_id": firebase_project_id,
+            "private_key": formatted_private_key,
+            "client_email": firebase_client_email,
+            "token_uri": "https://oauth2.googleapis.com/token",
+        })
+        
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        firebase_client_configured = True
+        print("Firebase Admin initialized successfully with Firestore.")
+except Exception as e:
+    print(f"Failed to initialize Firebase Admin: {e}")
+
+def is_firebase_configured():
+    return firebase_client_configured and db is not None
 
 app = Flask(__name__, static_folder='..')
 CORS(app)
@@ -90,6 +123,16 @@ def is_supabase_configured():
 
 COMMENTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'comments.json')
 
+def format_datetime(val):
+    if val is None:
+        return None
+    if hasattr(val, 'isoformat'):
+        return val.isoformat()
+    if hasattr(val, 'to_datetime'):
+        return val.to_datetime().isoformat()
+    return str(val)
+
+
 def load_local_comments():
     if os.path.exists(COMMENTS_FILE):
         try:
@@ -146,6 +189,18 @@ def serve_index():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({"ok": True})
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    return jsonify({
+        "apiKey": os.environ.get('FIREBASE_API_KEY', ''),
+        "authDomain": os.environ.get('FIREBASE_AUTH_DOMAIN', ''),
+        "projectId": os.environ.get('FIREBASE_PROJECT_ID', ''),
+        "storageBucket": os.environ.get('FIREBASE_STORAGE_BUCKET', ''),
+        "messagingSenderId": os.environ.get('FIREBASE_MESSAGING_SENDER_ID', ''),
+        "appId": os.environ.get('FIREBASE_APP_ID', ''),
+        "measurementId": os.environ.get('FIREBASE_MEASUREMENT_ID', '')
+    })
 
 @app.route('/api/stories', methods=['GET'])
 def get_stories(top_n: int = None) -> dict:
@@ -281,7 +336,25 @@ def get_comments():
         if not path:
             return jsonify({"error": "Missing required query param: path"}), 400
 
-        if is_supabase_configured():
+        if is_firebase_configured():
+            docs = db.collection('comments')\
+                .where('path', '==', path)\
+                .where('approved', '==', True)\
+                .stream()
+            results = []
+            for doc in docs:
+                d = doc.to_dict()
+                d['id'] = doc.id
+                if 'created_at' in d:
+                    d['created_at'] = format_datetime(d['created_at'])
+                results.append(d)
+            # Sort in-memory to avoid requiring a composite index in Firestore
+            try:
+                results.sort(key=lambda x: x.get('created_at') or '')
+            except Exception:
+                pass
+            return jsonify(results)
+        elif is_supabase_configured():
             supabase = get_supabase_client()
             response = (
                 supabase.table('comments')
@@ -316,7 +389,19 @@ def create_comment():
 
         comment = normalize_comment(data)
 
-        if is_supabase_configured():
+        if is_firebase_configured():
+            comment['created_at'] = datetime.now(timezone.utc)
+            doc_ref = db.collection('comments').document()
+            doc_ref.set(comment)
+            inserted = comment.copy()
+            inserted['id'] = doc_ref.id
+            if hasattr(inserted['created_at'], 'isoformat'):
+                inserted['created_at'] = inserted['created_at'].isoformat()
+            return jsonify({
+                "message": "Thanks. Your comment is awaiting moderation.",
+                "comment": inserted,
+            }), 201
+        elif is_supabase_configured():
             supabase = get_supabase_client()
             response = supabase.table('comments').insert(comment).execute()
             inserted = response.data[0] if response.data else comment
@@ -454,7 +539,19 @@ def admin_get_comments():
         if not expected or token != expected:
             return jsonify({"error": "Forbidden"}), 403
 
-        if is_supabase_configured():
+        if is_firebase_configured():
+            docs = db.collection('comments')\
+                .order_by('created_at', direction=firestore.Query.DESCENDING)\
+                .stream()
+            results = []
+            for doc in docs:
+                d = doc.to_dict()
+                d['id'] = doc.id
+                if 'created_at' in d:
+                    d['created_at'] = format_datetime(d['created_at'])
+                results.append(d)
+            return jsonify(results)
+        elif is_supabase_configured():
             supabase = get_supabase_client()
             response = (
                 supabase.table('comments')
@@ -486,7 +583,23 @@ def admin_moderate_comment():
         comment_id = data['id']
         action = data['action'] # 'approve', 'reject', 'spam', 'purge'
 
-        if is_supabase_configured():
+        if is_firebase_configured():
+            doc_ref = db.collection('comments').document(comment_id)
+            if action == 'approve':
+                doc_ref.update({'approved': True})
+                updated_doc = doc_ref.get()
+                comment_data = updated_doc.to_dict() if updated_doc.exists else None
+                if comment_data:
+                    comment_data['id'] = doc_ref.id
+                    if 'created_at' in comment_data:
+                        comment_data['created_at'] = format_datetime(comment_data['created_at'])
+                return jsonify({"ok": True, "comment": comment_data})
+            elif action in ('reject', 'spam', 'purge'):
+                doc_ref.delete()
+                return jsonify({"ok": True, "comment": {"id": comment_id}})
+            else:
+                return jsonify({"error": f"Invalid action: {action}"}), 400
+        elif is_supabase_configured():
             supabase = get_supabase_client()
             if action == 'approve':
                 response = supabase.table('comments').update({'approved': True}).eq('id', comment_id).execute()
