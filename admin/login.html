@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rocktest Admin - Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --font-primary: 'Outfit', system-ui, -apple-system, sans-serif;
+      --bg-body: #090d16;
+      --bg-card: rgba(17, 24, 39, 0.7);
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --accent-color: #6366f1;
+      --accent-hover: #4f46e5;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --input-bg: rgba(15, 23, 42, 0.6);
+      --transition-fast: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-primary);
+      background: radial-gradient(circle at top right, #1e1b4b 0%, var(--bg-body) 60%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 440px;
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 3rem 2.5rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .logo {
+      font-size: 1.8rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #a5b4fc 0%, #6366f1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .form-input {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.95rem;
+      transition: all var(--transition-fast);
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent-color);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    .submit-btn {
+      width: 100%;
+      background: var(--accent-color);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 0.9rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      margin-top: 1rem;
+    }
+
+    .submit-btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .submit-btn:active {
+      transform: translateY(0);
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin: 1.5rem 0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .divider:not(:empty)::before {
+      margin-right: 1em;
+    }
+
+    .divider:not(:empty)::after {
+      margin-left: 1em;
+    }
+
+    .google-btn {
+      width: 100%;
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 0.85rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .google-btn:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .error-msg {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      margin-bottom: 1.25rem;
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="login-container">
+    <div class="header">
+      <div class="logo">ROCKTEST ADMIN</div>
+      <div class="subtitle">Log in to manage your content dashboard</div>
+    </div>
+
+    <div id="error-msg" class="error-msg"></div>
+
+    <form id="login-form">
+      <div class="form-group">
+        <label for="email">Admin Email</label>
+        <input type="email" id="email" class="form-input" required placeholder="admin@example.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" class="form-input" required placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button type="submit" id="submit-btn" class="submit-btn">Sign In</button>
+    </form>
+
+    <div class="divider">or</div>
+
+    <button id="google-btn" class="google-btn" type="button">
+      <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
+      </svg>
+      Sign in with Google
+    </button>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
+    // 1. Resolve API host. The API is hosted on the same origin or falls back to localhost:3000
+    const API_HOST = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
+      ? window.location.origin
+      : 'http://localhost:3000'; // Fallback to standard local development port if running from file://
+
+    // 2. Fetch Firebase config from API
+    let firebaseConfig = {};
+    try {
+      const response = await fetch(`${API_HOST}/api/config`);
+      if (response.ok) {
+        firebaseConfig = await response.json();
+      }
+    } catch (err) {
+      console.error("Failed to load Firebase configuration:", err);
+    }
+
+    let auth = null;
+    try {
+      if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "FIREBASE_API_KEY") {
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+      }
+    } catch (e) {
+      console.error("Firebase Initialization Error:", e);
+    }
+
+    // 3. Monitor auth state
+    if (auth) {
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          localStorage.setItem('admin_token', 'bypass');
+          window.location.href = 'index.html';
+        }
+      });
+    } else {
+      console.log("Firebase not configured. Admin login running in Developer Mock Mode.");
+      if (localStorage.getItem('rocktest_mock_admin_user')) {
+        localStorage.setItem('admin_token', 'bypass');
+        window.location.href = 'index.html';
+      }
+    }
+
+    const form = document.getElementById('login-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const errorMsg = document.getElementById('error-msg');
+    const googleBtn = document.getElementById('google-btn');
+
+    function showError(text) {
+      errorMsg.textContent = text;
+      errorMsg.style.display = 'block';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.style.display = 'none';
+      submitBtn.disabled = true;
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        if (auth) {
+          await signInWithEmailAndPassword(auth, email, password);
+        } else {
+          // Dev Mock Mode login
+          localStorage.setItem('rocktest_mock_admin_user', JSON.stringify({ email }));
+        }
+
+        // Store a bypass token to satisfy any local storage checks
+        localStorage.setItem('admin_token', 'bypass');
+        window.location.href = 'index.html';
+      } catch (err) {
+        showError(err.message || "Authentication failed. Please verify credentials.");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    googleBtn.addEventListener('click', async () => {
+      errorMsg.style.display = 'none';
+      
+      try {
+        if (auth) {
+          const provider = new GoogleAuthProvider();
+          await signInWithPopup(auth, provider);
+        } else {
+          localStorage.setItem('rocktest_mock_admin_user', JSON.stringify({ email: 'google-admin@example.com' }));
+        }
+
+        localStorage.setItem('admin_token', 'bypass');
+        window.location.href = 'index.html';
+      } catch (err) {
+        showError(err.message || "Google Authentication failed.");
+      }
+    });
+  </script>
+</body>
+
+</html>
