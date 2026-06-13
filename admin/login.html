@@ -292,10 +292,10 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
-    // 1. Resolve API host. The API is hosted on the same origin or falls back to localhost:3000
+    // 1. Resolve API host. The API is hosted on the same origin or falls back to production
     const API_HOST = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
       ? window.location.origin
-      : 'http://localhost:3000'; // Fallback to standard local development port if running from file://
+      : 'https://rocktest-kzrz.vercel.app';
 
     // 2. Fetch Firebase config from API
     let firebaseConfig = {};

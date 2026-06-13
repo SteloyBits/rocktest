@@ -254,8 +254,8 @@ def get_stories(top_n: int = None) -> dict:
                 sort_by_popular = True
                 filters = [f for f in filters if f != 'popular']
 
-        # Build initial query: order by created_at ascending (FIFO)
-        query = supabase.table('stories').select('*').order('created_at', desc=False)
+        # Build initial query: order by created_at descending (LIFO)
+        query = supabase.table('stories').select('*').order('created_at', desc=True)
 
         if top_n is not None:
             query = query.limit(top_n)
@@ -272,7 +272,7 @@ def get_stories(top_n: int = None) -> dict:
                 # try category match
                 try:
                     q_cat = supabase.table('stories').select('*').eq('category', f)
-                    q_cat = q_cat.order('created_at', desc=False)
+                    q_cat = q_cat.order('created_at', desc=True)
                     # fetch a reasonable batch
                     q_cat = q_cat.limit(top_n * 3 if top_n else 100)
                     resp_cat = q_cat.execute()
@@ -287,7 +287,7 @@ def get_stories(top_n: int = None) -> dict:
                 # try tags contains (for text[] or json array column)
                 try:
                     q_tags = supabase.table('stories').select('*').filter('tags', 'cs', [f])
-                    q_tags = q_tags.order('created_at', desc=False)
+                    q_tags = q_tags.order('created_at', desc=True)
                     q_tags = q_tags.limit(top_n * 3 if top_n else 100)
                     resp_tags = q_tags.execute()
                     for s in (resp_tags.data or []):
@@ -326,9 +326,9 @@ def get_stories(top_n: int = None) -> dict:
 
                 collected = [s for s in stories if matches_filters_local(s, filters)]
 
-            # apply ordering: FIFO (created_at ascending)
+            # apply ordering: LIFO (created_at descending)
             try:
-                collected.sort(key=lambda s: s.get('created_at') or '')
+                collected.sort(key=lambda s: s.get('created_at') or '', reverse=True)
             except Exception:
                 pass
 
