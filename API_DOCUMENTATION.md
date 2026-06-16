@@ -5,17 +5,23 @@
 The admin dashboard should use `/api/admin/stories` and send the configured
 `x-admin-token` header. Admin story responses use `title`, `content`,
 `coverImage`, `tags`, `status`, `publishedAt`, `createdAt`, and `updatedAt`.
+Story status values are `DRAFT` and `PUBLISHED`; legacy lowercase inputs are
+accepted by the backend for compatibility.
 
 - `GET /api/admin/stories` lists drafts and published stories.
 - `POST /api/admin/stories` creates a draft.
-- `PUT /api/admin/stories/<id>` updates title, content, cover image, and tags.
+- `PUT /api/admin/stories/<id>` updates title, content, cover image, tags,
+  excerpt, meta description, category, quality score, slug, and optionally
+  status. Legacy payload keys (`headline`, `body`, `image_url`) are accepted.
 - `PATCH /api/admin/stories/<id>/publish` publishes a story.
 - `PATCH /api/admin/stories/<id>/draft` returns a story to draft.
 - `DELETE /api/admin/stories/<id>` permanently deletes a story.
 
 Public `GET /api/stories` and `GET /api/stories/<slug>` only expose stories
-whose status is `published`. Public responses retain the legacy `headline`,
-`body`, and `image_url` aliases used by the current static frontend.
+whose status is `PUBLISHED`. Public lists sort by newest `publishedAt` first,
+falling back to `createdAt` for migrated legacy stories. Public responses retain
+the legacy `headline`, `body`, and `image_url` aliases used by the current
+static frontend.
 
 ## Comment Moderation API Contract
 

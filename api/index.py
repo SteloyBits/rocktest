@@ -10,7 +10,9 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from api.story_service import (
+    DRAFT,
     LocalStoryRepository,
+    PUBLISHED,
     StoryNotFoundError,
     StoryService,
     StoryValidationError,
@@ -489,32 +491,12 @@ def create_story():
         if not is_admin_authorized():
             return jsonify({"error": "Forbidden"}), 403
 
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON body"}), 400
-        
-        required = ['headline', 'body', 'image_url']
-        for field in required:
-            if not data.get(field):
-                return jsonify({"error": f"Missing required field: {field}"}), 400
-        
-        if 'tags' in data and not isinstance(data['tags'], list):
-            return jsonify({"error": "tags must be an array"}), 400
-            
-        story = normalize_story(data)
-        
-        if is_supabase_configured():
-            supabase = get_supabase_client()
-            response = supabase.table('stories').insert(story).execute()
-            return jsonify(response.data[0]), 201
-        else:
-            stories = load_local_stories()
-            stories.append(story)
-            save_local_stories(stories)
-            return jsonify(story), 201
+        return jsonify(get_story_service().create(request.get_json(silent=True))), 201
+    except StoryValidationError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         print(f"Error creating story: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/api/stories', methods=['DELETE'])
 def delete_stories():
@@ -716,119 +698,34 @@ def admin_delete_comment(comment_id):
 @app.route('/api/stories/<id>', methods=['DELETE'])
 def delete_story(id):
     try:
-        token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
+        if not is_admin_authorized():
             return jsonify({"error": "Forbidden"}), 403
 
-        if is_supabase_configured():
-            supabase = get_supabase_client()
-            response = supabase.table('stories').delete().eq('id', id).execute()
-            if not response.data:
-                response = supabase.table('stories').delete().eq('slug', id).execute()
-            
-            return jsonify({"ok": True, "deleted": len(response.data) if response.data else 0})
-        else:
-            stories = load_local_stories()
-            new_stories = []
-            deleted_count = 0
-            for s in stories:
-                if str(s.get('id')) == str(id) or s.get('slug') == id:
-                    deleted_count += 1
-                else:
-                    new_stories.append(s)
-            if deleted_count > 0:
-                save_local_stories(new_stories)
-            return jsonify({"ok": True, "deleted": deleted_count})
+        aliases = get_story_comment_aliases(id)
+        get_story_service().delete(id)
+        get_comment_service().delete_for_story(id, aliases)
+        return jsonify({"success": True})
+    except StoryNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
         print(f"Error deleting story: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route('/api/stories/<id>', methods=['PUT'])
 def update_story(id):
     try:
-        token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
+        if not is_admin_authorized():
             return jsonify({"error": "Forbidden"}), 403
 
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON body"}), 400
-
-        update_fields = {}
-        if 'headline' in data:
-            update_fields['headline'] = data['headline']
-        if 'body' in data:
-            update_fields['body'] = data['body']
-        if 'image_url' in data:
-            update_fields['image_url'] = data['image_url']
-        if 'excerpt' in data:
-            update_fields['excerpt'] = data['excerpt']
-        if 'tags' in data:
-            if not isinstance(data['tags'], list):
-                return jsonify({"error": "tags must be an array"}), 400
-            parts = []
-            for t in data['tags']:
-                if isinstance(t, str):
-                    parts.extend([p.strip() for p in t.split(',') if p.strip()])
-            seen = set()
-            deduped = []
-            for t in parts:
-                if t not in seen:
-                    seen.add(t)
-                    deduped.append(t)
-            update_fields['tags'] = deduped
-        if 'category' in data:
-            update_fields['category'] = data['category']
-        if 'status' in data:
-            update_fields['status'] = data['status']
-        if 'quality_score' in data:
-            try:
-                update_fields['quality_score'] = float(data['quality_score'])
-            except (ValueError, TypeError):
-                pass
-        if 'slug' in data and data['slug']:
-            update_fields['slug'] = data['slug']
-        elif 'headline' in data:
-            slug = data['headline'].lower()
-            slug = re.sub(r'\s+', '-', slug)
-            slug = re.sub(r'[^a-z0-9\-]', '', slug)
-            update_fields['slug'] = slug
-
-        if is_supabase_configured():
-            supabase = get_supabase_client()
-            
-            current_resp = supabase.table('stories').select('*').eq('id', id).execute()
-            if not current_resp.data:
-                current_resp = supabase.table('stories').select('*').eq('slug', id).execute()
-                if not current_resp.data:
-                    return jsonify({"error": "Story not found"}), 404
-            
-            story_to_update = current_resp.data[0]
-            sid = story_to_update['id']
-
-            response = supabase.table('stories').update(update_fields).eq('id', sid).execute()
-            return jsonify(response.data[0]), 200
-        else:
-            stories = load_local_stories()
-            found = False
-            updated_story = None
-            for s in stories:
-                if str(s.get('id')) == str(id) or s.get('slug') == id:
-                    found = True
-                    for k, v in update_fields.items():
-                        s[k] = v
-                    updated_story = s
-                    break
-            if not found:
-                return jsonify({"error": "Story not found"}), 404
-            save_local_stories(stories)
-            return jsonify(updated_story), 200
+        return jsonify(get_story_service().update(id, request.get_json(silent=True))), 200
+    except StoryValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    except StoryNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
         print(f"Error updating story: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 def admin_story_error(error):
@@ -865,7 +762,7 @@ def admin_publish_story(story_id):
     if not is_admin_authorized():
         return jsonify({"error": "Forbidden"}), 403
     try:
-        return jsonify(get_story_service().set_status(story_id, "published"))
+        return jsonify(get_story_service().set_status(story_id, PUBLISHED))
     except Exception as error:
         return admin_story_error(error)
 
@@ -875,7 +772,7 @@ def admin_draft_story(story_id):
     if not is_admin_authorized():
         return jsonify({"error": "Forbidden"}), 403
     try:
-        return jsonify(get_story_service().set_status(story_id, "draft"))
+        return jsonify(get_story_service().set_status(story_id, DRAFT))
     except Exception as error:
         return admin_story_error(error)
 
@@ -895,7 +792,9 @@ def admin_delete_story(story_id):
     if not is_admin_authorized():
         return jsonify({"error": "Forbidden"}), 403
     try:
+        aliases = get_story_comment_aliases(story_id)
         get_story_service().delete(story_id)
+        get_comment_service().delete_for_story(story_id, aliases)
         return jsonify({"success": True})
     except Exception as error:
         return admin_story_error(error)

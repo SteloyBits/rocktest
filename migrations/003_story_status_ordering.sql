@@ -1,16 +1,10 @@
--- Add the canonical admin story model while preserving the legacy public columns.
+-- Normalize story lifecycle state and add public listing indexes.
 alter table public.stories
-  add column if not exists title text,
-  add column if not exists content text,
-  add column if not exists cover_image text,
   add column if not exists published_at timestamptz,
   add column if not exists updated_at timestamptz;
 
 update public.stories
 set
-  title = coalesce(nullif(title, ''), headline),
-  content = coalesce(nullif(content, ''), body),
-  cover_image = coalesce(nullif(cover_image, ''), image_url),
   status = case
     when status in ('draft', 'DRAFT') then 'DRAFT'
     else 'PUBLISHED'
@@ -22,9 +16,6 @@ set
   updated_at = coalesce(updated_at, created_at, now());
 
 alter table public.stories
-  alter column title set not null,
-  alter column content set not null,
-  alter column cover_image set not null,
   alter column status set default 'DRAFT',
   alter column status set not null,
   alter column updated_at set default now(),
@@ -36,12 +27,6 @@ alter table public.stories
 alter table public.stories
   add constraint stories_status_check check (status in ('DRAFT', 'PUBLISHED'));
 
-create index if not exists stories_slug_idx
-  on public.stories (slug);
-
-create index if not exists stories_status_published_at_idx
-  on public.stories (status, published_at desc);
-
 create index if not exists stories_status_idx
   on public.stories (status);
 
@@ -51,5 +36,5 @@ create index if not exists stories_published_at_idx
 create index if not exists stories_created_at_idx
   on public.stories (created_at desc);
 
-create index if not exists stories_updated_at_idx
-  on public.stories (updated_at desc);
+create index if not exists stories_status_published_at_idx
+  on public.stories (status, published_at desc);

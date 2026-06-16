@@ -164,6 +164,18 @@ class LocalCommentRepository:
         self.save(remaining)
         return True
 
+    def delete_for_story(self, story_ids):
+        comments = self.load()
+        identifiers = {str(story_id) for story_id in story_ids if story_id is not None}
+        remaining = [
+            item for item in comments
+            if canonical_comment(item)["story_id"] not in identifiers
+        ]
+        deleted = len(comments) - len(remaining)
+        if deleted:
+            self.save(remaining)
+        return deleted
+
 
 class SupabaseCommentRepository:
     def __init__(self, client):
@@ -191,6 +203,13 @@ class SupabaseCommentRepository:
     def delete(self, comment_id):
         response = self.client.table("comments").delete().eq("id", comment_id).execute()
         return bool(response.data)
+
+    def delete_for_story(self, story_ids):
+        identifiers = [str(story_id) for story_id in story_ids if story_id is not None]
+        if not identifiers:
+            return 0
+        response = self.client.table("comments").delete().in_("story_id", identifiers).execute()
+        return len(response.data or [])
 
 
 class CommentService:
@@ -245,6 +264,17 @@ class CommentService:
         current = self._get(comment_id)
         if not self.repository.delete(current.get("id")):
             raise CommentNotFoundError("Comment not found")
+
+    def delete_for_story(self, story_id, aliases=None):
+        identifiers = {str(story_id), *(str(alias) for alias in (aliases or []) if alias)}
+        if hasattr(self.repository, "delete_for_story"):
+            return self.repository.delete_for_story(identifiers)
+        deleted = 0
+        for comment in self.repository.list():
+            if canonical_comment(comment)["story_id"] in identifiers:
+                if self.repository.delete(comment.get("id")):
+                    deleted += 1
+        return deleted
 
     def _get(self, comment_id):
         comment = self.repository.get(comment_id)

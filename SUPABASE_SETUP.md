@@ -2,6 +2,9 @@
 
 1. For a fresh database, run [comments.sql](comments.sql). For an existing
    database, run [migrations/002_comment_moderation_status.sql](migrations/002_comment_moderation_status.sql).
+   If stories already exist, also run
+   [migrations/003_story_status_ordering.sql](migrations/003_story_status_ordering.sql)
+   to normalize `DRAFT`/`PUBLISHED` statuses and public ordering indexes.
 2. Set the backend environment variables:
    - `SUPABASE_URL`
    - `SUPABASE_KEY` (use the service-role key on the backend so protected admin

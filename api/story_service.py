@@ -1,8 +1,13 @@
 import re
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 
-VALID_STATUSES = {"draft", "published"}
+DRAFT = "DRAFT"
+PUBLISHED = "PUBLISHED"
+VALID_STATUSES = {DRAFT, PUBLISHED}
+PUBLISHED_LEGACY_STATUSES = {"published", "PUBLISHED", "validated", "VALIDATED"}
+DRAFT_LEGACY_STATUSES = {"draft", "DRAFT", "review", "REVIEW"}
 
 
 class StoryValidationError(ValueError):
@@ -20,6 +25,29 @@ def utc_now():
 def slugify(value):
     slug = re.sub(r"[^a-z0-9]+", "-", str(value).strip().lower()).strip("-")
     return slug or "story"
+
+
+def normalize_status(value, default=DRAFT):
+    if value is None or value == "":
+        return default
+    if value in PUBLISHED_LEGACY_STATUSES:
+        return PUBLISHED
+    if value in DRAFT_LEGACY_STATUSES:
+        return DRAFT
+    raise StoryValidationError("status must be DRAFT or PUBLISHED")
+
+
+def is_public_status(value):
+    try:
+        return normalize_status(value) == PUBLISHED
+    except StoryValidationError:
+        return False
+
+
+def validate_image_url(value):
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise StoryValidationError("coverImage must be a valid http or https URL")
 
 
 def normalize_tags(value):
@@ -56,10 +84,14 @@ def canonical_story(record):
         "content": content,
         "coverImage": cover_image,
         "tags": record.get("tags") or [],
-        "status": record.get("status", "draft"),
+        "status": normalize_status(record.get("status"), DRAFT),
         "publishedAt": published_at,
         "createdAt": created_at,
         "updatedAt": updated_at,
+        "excerpt": record.get("excerpt", ""),
+        "metaDescription": record.get("metaDescription", record.get("meta_description", "")),
+        "category": record.get("category", ""),
+        "qualityScore": record.get("qualityScore", record.get("quality_score")),
     }
 
 
@@ -75,9 +107,9 @@ def public_story(record):
             "updated_at": story["updatedAt"],
             "published_at": story["publishedAt"],
             "excerpt": record.get("excerpt", ""),
-            "meta_description": record.get("meta_description", ""),
-            "category": record.get("category", ""),
-            "quality_score": record.get("quality_score"),
+            "meta_description": story["metaDescription"],
+            "category": story["category"],
+            "quality_score": story["qualityScore"],
         }
     )
     return story
@@ -100,6 +132,10 @@ def storage_story(story, existing=None):
             "published_at": story["publishedAt"],
             "created_at": story["createdAt"],
             "updated_at": story["updatedAt"],
+            "excerpt": story.get("excerpt", ""),
+            "meta_description": story.get("metaDescription", ""),
+            "category": story.get("category", ""),
+            "quality_score": story.get("qualityScore"),
         }
     )
     return existing
@@ -119,10 +155,9 @@ def validate_create(data):
         raise StoryValidationError("content is required and cannot be empty")
     if not isinstance(cover_image, str) or not cover_image.strip():
         raise StoryValidationError("coverImage is required and cannot be empty")
+    validate_image_url(cover_image.strip())
 
-    status = data.get("status", "draft")
-    if status not in VALID_STATUSES:
-        raise StoryValidationError("status must be draft or published")
+    status = normalize_status(data.get("status"), DRAFT)
 
     return {
         "title": title.strip(),
@@ -131,6 +166,10 @@ def validate_create(data):
         "tags": normalize_tags(data.get("tags", [])),
         "slug": slugify(data.get("slug") or title),
         "status": status,
+        "excerpt": str(data.get("excerpt", "")).strip(),
+        "metaDescription": str(data.get("metaDescription", data.get("meta_description", ""))).strip(),
+        "category": str(data.get("category", "")).strip(),
+        "qualityScore": coerce_quality_score(data.get("qualityScore", data.get("quality_score"))),
     }
 
 
@@ -138,20 +177,67 @@ def validate_update(data):
     if not isinstance(data, dict) or not data:
         raise StoryValidationError("Invalid JSON body")
 
-    allowed = {"title", "content", "coverImage", "tags"}
-    unknown = set(data) - allowed
+    aliases = {
+        "headline": "title",
+        "body": "content",
+        "image_url": "coverImage",
+        "cover_image": "coverImage",
+        "meta_description": "metaDescription",
+        "quality_score": "qualityScore",
+    }
+    normalized_data = {aliases.get(key, key): value for key, value in data.items()}
+    allowed = {
+        "title",
+        "content",
+        "coverImage",
+        "tags",
+        "excerpt",
+        "metaDescription",
+        "category",
+        "qualityScore",
+        "status",
+        "slug",
+    }
+    unknown = set(normalized_data) - allowed
     if unknown:
         raise StoryValidationError(f"Unsupported fields: {', '.join(sorted(unknown))}")
 
     result = {}
     for field in ("title", "content", "coverImage"):
-        if field in data:
-            if not isinstance(data[field], str) or not data[field].strip():
+        if field in normalized_data:
+            if not isinstance(normalized_data[field], str) or not normalized_data[field].strip():
                 raise StoryValidationError(f"{field} cannot be empty")
-            result[field] = data[field].strip()
-    if "tags" in data:
-        result["tags"] = normalize_tags(data["tags"])
+            result[field] = normalized_data[field].strip()
+            if field == "coverImage":
+                validate_image_url(result[field])
+    if "tags" in normalized_data:
+        result["tags"] = normalize_tags(normalized_data["tags"])
+    for field in ("excerpt", "metaDescription", "category"):
+        if field in normalized_data:
+            if normalized_data[field] is None:
+                result[field] = ""
+            elif not isinstance(normalized_data[field], str):
+                raise StoryValidationError(f"{field} must be a string")
+            else:
+                result[field] = normalized_data[field].strip()
+    if "qualityScore" in normalized_data:
+        result["qualityScore"] = coerce_quality_score(normalized_data["qualityScore"])
+    if "status" in normalized_data:
+        result["status"] = normalize_status(normalized_data["status"])
+    if "slug" in normalized_data and normalized_data["slug"]:
+        if not isinstance(normalized_data["slug"], str):
+            raise StoryValidationError("slug must be a string")
+        result["slug"] = slugify(normalized_data["slug"])
     return result
+
+
+def coerce_quality_score(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise StoryValidationError("qualityScore must be a number")
 
 
 class LocalStoryRepository:
@@ -238,16 +324,16 @@ class StoryService:
         ]
 
     def list_public(self):
-        stories = [story for story in self.repository.list() if story.get("status") == "published"]
+        stories = [story for story in self.repository.list() if is_public_status(story.get("status"))]
         stories.sort(
-            key=lambda item: item.get("published_at") or item.get("updated_at") or item.get("created_at") or "",
+            key=lambda item: item.get("published_at") or item.get("created_at") or "",
             reverse=True,
         )
         return [public_story(story) for story in stories]
 
     def get_public(self, identifier):
         story = self.repository.get(identifier)
-        if not story or story.get("status") != "published":
+        if not story or not is_public_status(story.get("status")):
             raise StoryNotFoundError("Story not found")
         return public_story(story)
 
@@ -258,7 +344,7 @@ class StoryService:
         story = {
             "id": self.id_factory(),
             **validated,
-            "publishedAt": now if validated["status"] == "published" else None,
+            "publishedAt": now if validated["status"] == PUBLISHED else None,
             "createdAt": now,
             "updatedAt": now,
         }
@@ -272,18 +358,24 @@ class StoryService:
         story.update(changes)
         if "title" in changes and changes["title"] != canonical_story(current)["title"]:
             story["slug"] = self._unique_slug(slugify(changes["title"]), story["id"])
+        elif "slug" in changes:
+            story["slug"] = self._unique_slug(changes["slug"], story["id"])
         story["updatedAt"] = utc_now()
+        if "status" in changes:
+            if changes["status"] == PUBLISHED and not story.get("publishedAt"):
+                story["publishedAt"] = story["updatedAt"]
+            elif changes["status"] == DRAFT:
+                story["publishedAt"] = None
         updated = self.repository.update(story["id"], storage_story(story, current))
         return canonical_story(updated)
 
     def set_status(self, identifier, status):
-        if status not in VALID_STATUSES:
-            raise StoryValidationError("status must be draft or published")
+        status = normalize_status(status)
         current = self._get(identifier)
         story = canonical_story(current)
         now = utc_now()
         story["status"] = status
-        story["publishedAt"] = now if status == "published" else None
+        story["publishedAt"] = now if status == PUBLISHED else None
         story["updatedAt"] = now
         updated = self.repository.update(story["id"], storage_story(story, current))
         return canonical_story(updated)
