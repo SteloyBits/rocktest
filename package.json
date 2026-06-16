@@ -1,0 +1,7 @@
+{
+  "name": "rocktest-backend",
+  "private": true,
+  "scripts": {
+    "test": "python3 -m pytest -q"
+  }
+}

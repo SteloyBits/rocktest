@@ -9,6 +9,25 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from api.story_service import (
+    LocalStoryRepository,
+    StoryNotFoundError,
+    StoryService,
+    StoryValidationError,
+    SupabaseStoryRepository,
+)
+from api.comment_service import (
+    APPROVED,
+    PENDING_REVIEW,
+    REJECTED,
+    SPAM,
+    CommentNotFoundError,
+    CommentService,
+    CommentValidationError,
+    LocalCommentRepository,
+    SupabaseCommentRepository,
+    atomic_json_save,
+)
 
 load_dotenv()
 
@@ -108,6 +127,35 @@ def save_local_stories(stories):
     except Exception as e:
         print(f"Error writing local stories: {e}")
 
+
+def get_story_service():
+    if is_supabase_configured():
+        repository = SupabaseStoryRepository(get_supabase_client())
+    else:
+        repository = LocalStoryRepository(load_local_stories, save_local_stories)
+    return StoryService(repository, generate_id)
+
+
+def is_admin_authorized():
+    expected = os.environ.get('ADMIN_TOKEN')
+    return bool(expected and request.headers.get('x-admin-token') == expected)
+
+
+def get_comment_service():
+    if is_supabase_configured():
+        repository = SupabaseCommentRepository(get_supabase_client())
+    else:
+        repository = LocalCommentRepository(load_local_comments, save_local_comments)
+    return CommentService(repository, generate_id)
+
+
+def get_story_comment_aliases(story_id):
+    for story in get_story_service().repository.list():
+        if str(story.get("id")) == str(story_id) or story.get("slug") == story_id:
+            return [story.get("id"), story.get("slug")]
+    return []
+
+
 def load_local_comments():
     if os.path.exists(COMMENTS_FILE):
         try:
@@ -119,10 +167,10 @@ def load_local_comments():
 
 def save_local_comments(comments):
     try:
-        with open(COMMENTS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(comments, f, indent=2, ensure_ascii=False)
+        atomic_json_save(COMMENTS_FILE, comments, json)
     except Exception as e:
         print(f"Error writing local comments: {e}")
+        raise
 
 def normalize_comment(input_data):
     path = str(input_data.get('path', '')).strip()
@@ -168,6 +216,37 @@ def health():
 @app.route('/api/stories', methods=['GET'])
 def get_stories(top_n: int = None) -> dict:
     try:
+        stories = get_story_service().list_public()
+        filters_param = request.args.get('filters', '')
+        filters = [value.strip().lower() for value in filters_param.split(',') if value.strip()]
+        sort_by_popular = 'popular' in filters
+        filters = [value for value in filters if value != 'popular']
+
+        if filters:
+            stories = [
+                story for story in stories
+                if str(story.get('category', '')).lower() in filters
+                or any(
+                    filter_value in str(tag).lower()
+                    for filter_value in filters
+                    for tag in story.get('tags', [])
+                )
+            ]
+        if sort_by_popular:
+            stories.sort(key=lambda story: story.get('quality_score') or 0, reverse=True)
+
+        top_n_param = request.args.get('top_n')
+        if top_n_param is not None:
+            try:
+                top_n = int(top_n_param)
+                if top_n >= 0:
+                    stories = stories[:top_n]
+            except ValueError:
+                pass
+        return jsonify(stories)
+
+        # Legacy implementation retained below for reference; the service return above
+        # centralizes published-only filtering across local and Supabase storage.
         # Extract optional top_n from query params, default to None (return all)
         top_n_param = request.args.get('top_n')
         if top_n_param is not None:
@@ -343,6 +422,8 @@ def get_stories(top_n: int = None) -> dict:
 @app.route('/api/stories/<slug>', methods=['GET'])
 def get_story(slug):
     try:
+        return jsonify(get_story_service().get_public(slug))
+
         if is_supabase_configured():
             supabase = get_supabase_client()
             response = supabase.table('stories').select('*').eq('slug', slug).execute()
@@ -355,6 +436,8 @@ def get_story(slug):
                 if s.get('slug') == slug or str(s.get('id')) == slug:
                     return jsonify(s)
             return jsonify({"error": "Not found"}), 404
+    except StoryNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
         print(f"Error fetching story: {e}")
         return jsonify({"error": str(e)}), 500
@@ -365,72 +448,47 @@ def get_comments():
         path = str(request.args.get('path', '')).strip()
         if not path:
             return jsonify({"error": "Missing required query param: path"}), 400
-
-        if is_supabase_configured():
-            supabase = get_supabase_client()
-            response = (
-                supabase.table('comments')
-                .select('id,path,author,url,text,created_at')
-                .eq('path', path)
-                .eq('approved', True)
-                .order('created_at', desc=False)
-                .execute()
-            )
-            return jsonify(response.data or [])
-        else:
-            comments = load_local_comments()
-            filtered = [
-                c for c in comments 
-                if c.get('path') == path and c.get('approved', True)
-            ]
-            try:
-                filtered.sort(key=lambda x: x.get('created_at', ''))
-            except Exception:
-                pass
-            return jsonify(filtered)
+        story_id = path[6:] if path.startswith("story:") else path
+        return jsonify(get_comment_service().list_public(story_id, get_story_comment_aliases(story_id)))
     except Exception as e:
         print(f"Error fetching comments: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/api/stories/<story_id>/comments', methods=['GET'])
+def get_story_comments(story_id):
+    try:
+        return jsonify(get_comment_service().list_public(story_id, get_story_comment_aliases(story_id)))
+    except Exception as e:
+        print(f"Error fetching story comments: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/api/comments', methods=['POST'])
 def create_comment():
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON body"}), 400
-
-        comment = normalize_comment(data)
-
-        if is_supabase_configured():
-            supabase = get_supabase_client()
-            response = supabase.table('comments').insert(comment).execute()
-            inserted = response.data[0] if response.data else comment
-            return jsonify({
-                "message": "Thanks. Your comment is awaiting moderation.",
-                "comment": inserted,
-            }), 201
-        else:
-            comment['id'] = generate_id()
-            comment['created_at'] = datetime.now(timezone.utc).isoformat()
-            comment['approved'] = True
-            
-            comments = load_local_comments()
-            comments.append(comment)
-            save_local_comments(comments)
-            
-            return jsonify({
-                "message": "Thanks. Your comment has been posted.",
-                "comment": comment,
-            }), 201
-    except ValueError as e:
+        data = request.get_json(silent=True)
+        if isinstance(data, dict) and not data.get("story_id") and data.get("path"):
+            path = str(data["path"]).strip()
+            data = {**data, "story_id": path[6:] if path.startswith("story:") else path}
+        comment = get_comment_service().create(data)
+        return jsonify({
+            "success": True,
+            "status": PENDING_REVIEW,
+            "message": "Thanks. Your comment is awaiting moderation.",
+            "comment": comment,
+        }), 201
+    except CommentValidationError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         print(f"Error creating comment: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/api/stories', methods=['POST'])
 def create_story():
     try:
+        if not is_admin_authorized():
+            return jsonify({"error": "Forbidden"}), 403
+
         data = request.get_json()
         if not data:
             return jsonify({"error": "Invalid JSON body"}), 400
@@ -461,6 +519,9 @@ def create_story():
 @app.route('/api/stories', methods=['DELETE'])
 def delete_stories():
     try:
+        if not is_admin_authorized():
+            return jsonify({"error": "Forbidden"}), 403
+
         if is_supabase_configured():
             supabase = get_supabase_client()
             response = supabase.table('stories').select('id').execute()
@@ -565,78 +626,91 @@ def admin_normalize_tags():
 
 @app.route('/api/admin/comments', methods=['GET'])
 def admin_get_comments():
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
     try:
-        token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
-            return jsonify({"error": "Forbidden"}), 403
-
-        if is_supabase_configured():
-            supabase = get_supabase_client()
-            response = (
-                supabase.table('comments')
-                .select('*')
-                .order('created_at', desc=True)
-                .execute()
-            )
-            return jsonify(response.data or [])
-        else:
-            comments = load_local_comments()
-            return jsonify(comments)
+        return jsonify(get_comment_service().list_admin(request.args.get("status")))
+    except CommentValidationError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         print(f"Error fetching admin comments: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route('/api/admin/comments/moderate', methods=['POST'])
 def admin_moderate_comment():
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
     try:
-        token = request.headers.get('x-admin-token')
-        expected = os.environ.get('ADMIN_TOKEN')
-        if not expected or token != expected:
-            return jsonify({"error": "Forbidden"}), 403
-
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if not data or 'id' not in data or 'action' not in data:
             return jsonify({"error": "Missing id or action"}), 400
 
-        comment_id = data['id']
-        action = data['action'] # 'approve', 'reject', 'spam', 'purge'
-
-        if is_supabase_configured():
-            supabase = get_supabase_client()
-            if action == 'approve':
-                response = supabase.table('comments').update({'approved': True}).eq('id', comment_id).execute()
-            elif action in ('reject', 'spam', 'purge'):
-                response = supabase.table('comments').delete().eq('id', comment_id).execute()
-            else:
-                return jsonify({"error": f"Invalid action: {action}"}), 400
-            return jsonify({"ok": True, "comment": response.data[0] if response.data else None})
-        else:
-            comments = load_local_comments()
-            found = False
-            new_comments = []
-            target = None
-            for c in comments:
-                if str(c.get('id')) == str(comment_id):
-                    found = True
-                    if action == 'approve':
-                        c['approved'] = True
-                        new_comments.append(c)
-                        target = c
-                    elif action in ('reject', 'spam', 'purge'):
-                        target = c
-                    else:
-                        return jsonify({"error": f"Invalid action: {action}"}), 400
-                else:
-                    new_comments.append(c)
-            if not found:
-                return jsonify({"error": "Comment not found"}), 404
-            save_local_comments(new_comments)
-            return jsonify({"ok": True, "comment": target})
+        action = data["action"]
+        if action == "purge":
+            get_comment_service().delete(data["id"])
+            return jsonify({"success": True})
+        status_by_action = {
+            "approve": APPROVED,
+            "reject": REJECTED,
+            "spam": SPAM,
+            "pending": PENDING_REVIEW,
+        }
+        if action not in status_by_action:
+            return jsonify({"error": f"Invalid action: {action}"}), 400
+        comment = get_comment_service().set_status(data["id"], status_by_action[action])
+        return jsonify({"ok": True, "comment": comment})
+    except CommentNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
         print(f"Error moderating comment: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
+
+
+def moderate_comment(comment_id, status):
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        return jsonify(get_comment_service().set_status(comment_id, status))
+    except CommentNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        print(f"Error moderating comment: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/api/admin/comments/<comment_id>/approve', methods=['PATCH'])
+def admin_approve_comment(comment_id):
+    return moderate_comment(comment_id, APPROVED)
+
+
+@app.route('/api/admin/comments/<comment_id>/reject', methods=['PATCH'])
+def admin_reject_comment(comment_id):
+    return moderate_comment(comment_id, REJECTED)
+
+
+@app.route('/api/admin/comments/<comment_id>/spam', methods=['PATCH'])
+def admin_spam_comment(comment_id):
+    return moderate_comment(comment_id, SPAM)
+
+
+@app.route('/api/admin/comments/<comment_id>/pending', methods=['PATCH'])
+def admin_pending_comment(comment_id):
+    return moderate_comment(comment_id, PENDING_REVIEW)
+
+
+@app.route('/api/admin/comments/<comment_id>', methods=['DELETE'])
+def admin_delete_comment(comment_id):
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        get_comment_service().delete(comment_id)
+        return jsonify({"success": True})
+    except CommentNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        print(f"Error deleting comment: {e}")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route('/api/stories/<id>', methods=['DELETE'])
@@ -755,6 +829,76 @@ def update_story(id):
     except Exception as e:
         print(f"Error updating story: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+def admin_story_error(error):
+    if isinstance(error, StoryValidationError):
+        return jsonify({"error": str(error)}), 400
+    if isinstance(error, StoryNotFoundError):
+        return jsonify({"error": str(error)}), 404
+    print(f"Admin story error: {error}")
+    return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route('/api/admin/stories', methods=['GET'])
+def admin_list_stories():
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        return jsonify(get_story_service().list_admin())
+    except Exception as error:
+        return admin_story_error(error)
+
+
+@app.route('/api/admin/stories', methods=['POST'])
+def admin_create_story():
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        return jsonify(get_story_service().create(request.get_json(silent=True))), 201
+    except Exception as error:
+        return admin_story_error(error)
+
+
+@app.route('/api/admin/stories/<story_id>/publish', methods=['PATCH'])
+def admin_publish_story(story_id):
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        return jsonify(get_story_service().set_status(story_id, "published"))
+    except Exception as error:
+        return admin_story_error(error)
+
+
+@app.route('/api/admin/stories/<story_id>/draft', methods=['PATCH'])
+def admin_draft_story(story_id):
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        return jsonify(get_story_service().set_status(story_id, "draft"))
+    except Exception as error:
+        return admin_story_error(error)
+
+
+@app.route('/api/admin/stories/<story_id>', methods=['PUT'])
+def admin_update_story(story_id):
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        return jsonify(get_story_service().update(story_id, request.get_json(silent=True)))
+    except Exception as error:
+        return admin_story_error(error)
+
+
+@app.route('/api/admin/stories/<story_id>', methods=['DELETE'])
+def admin_delete_story(story_id):
+    if not is_admin_authorized():
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        get_story_service().delete(story_id)
+        return jsonify({"success": True})
+    except Exception as error:
+        return admin_story_error(error)
 
 
 if __name__ == '__main__':

@@ -99,11 +99,11 @@
           <div class="comment-form-grid">
             <label>
               Name
-              <input id="comment-author" name="author" type="text" maxlength="120" autocomplete="name" placeholder="Your name">
+              <input id="comment-author" name="author" type="text" maxlength="120" autocomplete="name" placeholder="Your name" required>
             </label>
             <label>
               Email
-              <input id="comment-email" name="email" type="email" maxlength="200" autocomplete="email" placeholder="name@example.com">
+              <input id="comment-email" name="email" type="email" maxlength="200" autocomplete="email" placeholder="name@example.com" required>
             </label>
             <label>
               Website
@@ -186,7 +186,8 @@
 
       const author = document.createElement('span');
       author.className = 'comment-author';
-      author.textContent = comment.author && comment.author.trim() ? comment.author : 'Anonymous';
+      const authorName = comment.author_name || comment.author || '';
+      author.textContent = authorName.trim() ? authorName : 'Anonymous';
 
       const time = document.createElement('span');
       time.textContent = formatCommentDate(comment.created_at || comment.createdAt) || 'Just now';
@@ -203,7 +204,7 @@
 
       const text = document.createElement('p');
       text.className = 'comment-text';
-      text.textContent = comment.text || '';
+      text.textContent = comment.content || comment.text || '';
 
       wrapper.appendChild(meta);
       wrapper.appendChild(text);
@@ -243,7 +244,7 @@
       empty.hidden = false;
       empty.textContent = 'Loading comments...';
       try {
-        const res = await fetch('/api/comments?path=' + encodeURIComponent(path), { cache: 'no-store' });
+        const res = await fetch('/api/stories/' + encodeURIComponent(path) + '/comments', { cache: 'no-store' });
         let comments = [];
         if (res.ok) {
           comments = await res.json();
@@ -432,7 +433,7 @@
           nextLink.setAttribute('aria-disabled', 'true');
         }
         document.getElementById('comments-title').textContent = (s.headline || 'Story') + ' comments';
-        await loadComments(getCommentPath(s.slug || slug || ''));
+        await loadComments(String(s.id || s.slug || slug || ''));
         setCommentStatus('');
         showDetailView();
       } catch (e) {
@@ -465,6 +466,14 @@
         setCommentStatus('Comment text is required.', true);
         return;
       }
+      if (!author) {
+        setCommentStatus('Your name is required.', true);
+        return;
+      }
+      if (!email) {
+        setCommentStatus('Your email is required.', true);
+        return;
+      }
 
       submit.disabled = true;
       setCommentStatus('Posting your comment...');
@@ -474,11 +483,10 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            path: currentCommentPath,
-            author,
-            email,
-            url,
-            text,
+            story_id: currentCommentPath,
+            author_name: author,
+            author_email: email,
+            content: text,
           }),
         });
         if (!res.ok) {
@@ -488,10 +496,9 @@
         const payload = await res.json().catch(() => ({}));
 
         addPendingComment(currentCommentPath, {
-          author,
-          email,
-          url,
-          text,
+          author_name: author,
+          author_email: email,
+          content: text,
           created_at: new Date().toISOString(),
         });
         renderComments(currentCommentPath);
