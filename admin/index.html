@@ -7,11 +7,12 @@
   <title>Rocktest Admin Console</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
   <style>
     :root {
       --font-primary: 'Outfit', system-ui, -apple-system, sans-serif;
-      
+
       /* Dark Theme Dashboard Palette */
       --bg-app: #080c14;
       --bg-sidebar: #0f172a;
@@ -19,17 +20,17 @@
       --bg-card-hover: rgba(30, 41, 59, 0.6);
       --border-color: rgba(255, 255, 255, 0.06);
       --border-color-hover: rgba(255, 255, 255, 0.12);
-      
+
       --text-main: #f8fafc;
       --text-muted: #94a3b8;
-      
+
       --accent-color: #6366f1;
       --accent-hover: #4f46e5;
-      
+
       --success-color: #10b981;
       --warning-color: #f59e0b;
       --danger-color: #ef4444;
-      
+
       --sidebar-width: 260px;
       --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
@@ -165,8 +166,15 @@
     }
 
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     .view-header {
@@ -298,7 +306,8 @@
       font-size: 0.95rem;
     }
 
-    th, td {
+    th,
+    td {
       padding: 1rem 1.5rem;
       border-bottom: 1px solid var(--border-color);
     }
@@ -329,9 +338,20 @@
       text-transform: uppercase;
     }
 
-    .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; }
-    .badge-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-    .badge-info { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
+    .badge-success {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+    }
+
+    .badge-warning {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+    }
+
+    .badge-info {
+      background: rgba(99, 102, 241, 0.15);
+      color: #818cf8;
+    }
 
     /* Modals / Forms */
     .modal-overlay {
@@ -487,15 +507,19 @@
         padding: 2rem 0.5rem;
         align-items: center;
       }
+
       .sidebar-brand {
         display: none;
       }
+
       .nav-item button span {
         display: none;
       }
+
       .user-info {
         display: none;
       }
+
       .main-content {
         margin-left: 70px;
         width: calc(100% - 70px);
@@ -534,13 +558,13 @@
 
   <!-- Main content panel -->
   <main class="main-content">
-    
+
     <!-- DASHBOARD VIEW -->
     <section id="view-dashboard" class="view-section active">
       <div class="view-header">
         <h1 class="view-title">Dashboard Overview</h1>
       </div>
-      
+
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-label">Total Stories</div>
@@ -617,7 +641,7 @@
       <div class="view-header">
         <h1 class="view-title">Moderate Comments</h1>
       </div>
-      
+
       <div id="comments-container">
         <p style="text-align: center; color: var(--text-muted);">Loading moderation queue...</p>
       </div>
@@ -628,7 +652,7 @@
       <div class="view-header">
         <h1 class="view-title">Admin Utilities</h1>
       </div>
-      
+
       <div class="stats-grid" style="grid-template-columns: 1fr; max-width: 700px;">
         <div class="stat-card">
           <h3 style="margin-bottom: 0.5rem;">Normalize Tags</h3>
@@ -637,7 +661,7 @@
           </p>
           <button id="util-normalize-tags" class="btn btn-secondary">Normalize Tags</button>
         </div>
-        
+
         <div class="stat-card" style="border-color: rgba(239, 68, 68, 0.2);">
           <h3 style="margin-bottom: 0.5rem; color: #fca5a5;">Reset Database</h3>
           <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
@@ -671,7 +695,8 @@
             </div>
             <div class="form-group span-2">
               <label for="f-body">Body text * (Markdown Supported)</label>
-              <textarea id="f-body" class="form-control" required placeholder="Write the main story body content..."></textarea>
+              <textarea id="f-body" class="form-control" required
+                placeholder="Write the main story body content..."></textarea>
             </div>
             <div class="form-group span-2">
               <label for="f-excerpt">Excerpt / Summary</label>
@@ -679,7 +704,8 @@
             </div>
             <div class="form-group span-2">
               <label for="f-image_url">Featured Image URL *</label>
-              <input type="url" id="f-image_url" class="form-control" required placeholder="https://example.com/image.jpg">
+              <input type="url" id="f-image_url" class="form-control" required
+                placeholder="https://example.com/image.jpg">
             </div>
             <div class="form-group">
               <label for="f-category">Category</label>
@@ -691,7 +717,8 @@
             </div>
             <div class="form-group">
               <label for="f-quality_score">Quality Score</label>
-              <input type="number" id="f-quality_score" class="form-control" step="0.1" min="0" max="10" placeholder="e.g. 8.5">
+              <input type="number" id="f-quality_score" class="form-control" step="0.1" min="0" max="10"
+                placeholder="e.g. 8.5">
             </div>
             <div class="form-group">
               <label for="f-status">Status</label>
@@ -787,7 +814,7 @@
       item.addEventListener('click', () => {
         const targetView = item.getAttribute('data-view');
         if (!targetView) return;
-        
+
         navItems.forEach(i => i.classList.remove('active'));
         viewSections.forEach(s => s.classList.remove('active'));
 
@@ -815,7 +842,7 @@
         'x-admin-token': token,
         ...(options.headers || {})
       };
-      
+
       const response = await fetch(`${API_HOST}${endpoint}`, {
         ...options,
         headers
@@ -827,7 +854,7 @@
         try {
           const parsed = JSON.parse(errorMsg);
           message = parsed.error || parsed.message || message;
-        } catch (_) {}
+        } catch (_) { }
         throw new Error(message);
       }
 
@@ -843,7 +870,7 @@
       try {
         // Fetch stats from the new backend stats endpoint
         const stats = await apiRequest('/api/admin/stats');
-        
+
         document.getElementById('stat-stories-count').textContent = stats.stories_count;
         document.getElementById('stat-comments-count').textContent = stats.comments_count;
         document.getElementById('stat-pending-count').textContent = stats.pending_comments_count;
@@ -856,7 +883,7 @@
         // Calculate Stats
         document.getElementById('stat-stories-count').textContent = stories.length;
         document.getElementById('stat-comments-count').textContent = comments.length;
-        
+
         const pendingCount = comments.filter(c => !c.approved).length;
         document.getElementById('stat-pending-count').textContent = pendingCount;
 
@@ -874,7 +901,7 @@
 
         const rankTableBody = document.querySelector('#top-stories-table tbody');
         rankTableBody.innerHTML = '';
-        
+
         if (rankedStories.length === 0) {
           rankTableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No rated stories yet.</td></tr>';
           return;
@@ -968,7 +995,7 @@
     function openStoryModal(storyId = null) {
       storyForm.reset();
       document.getElementById('story-id').value = '';
-      
+
       if (storyId) {
         modalTitle.textContent = "Edit Story";
         const story = cachedStories.find(s => s.id === storyId);
@@ -1067,7 +1094,7 @@
     async function loadCommentsData() {
       const container = document.getElementById('comments-container');
       container.innerHTML = '<p style="text-align: center; color: var(--text-muted);">Loading moderation queue...</p>';
-      
+
       try {
         const comments = await apiRequest('/api/admin/comments');
         cachedComments = comments;
@@ -1089,9 +1116,9 @@
       comments.forEach(c => {
         const div = document.createElement('div');
         div.className = 'comment-card';
-        
-        const approvedBadge = c.approved 
-          ? '<span class="badge badge-success">Approved</span>' 
+
+        const approvedBadge = c.approved
+          ? '<span class="badge badge-success">Approved</span>'
           : '<span class="badge badge-warning">Awaiting Moderation</span>';
 
         const dateStr = c.created_at ? new Date(c.created_at).toLocaleString() : 'Date Unknown';
