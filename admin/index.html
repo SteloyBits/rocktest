@@ -880,18 +880,7 @@
         const stories = await apiRequest('/api/admin/stories');
         cachedStories = stories;
 
-        // Calculate Stats
-        document.getElementById('stat-stories-count').textContent = stories.length;
-        document.getElementById('stat-comments-count').textContent = comments.length;
 
-        const pendingCount = comments.filter(c => !c.approved).length;
-        document.getElementById('stat-pending-count').textContent = pendingCount;
-
-        const scoredStories = stories.filter(s => s.quality_score !== null && s.quality_score !== undefined);
-        const avgScore = scoredStories.length > 0
-          ? (scoredStories.reduce((acc, s) => acc + parseFloat(s.quality_score), 0) / scoredStories.length).toFixed(1)
-          : 'N/A';
-        document.getElementById('stat-quality-avg').textContent = avgScore;
 
         // Render Ranking Table (Sorted by quality score desc)
         const rankedStories = [...stories]

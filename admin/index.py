@@ -65,8 +65,7 @@ CORS(app)
 def verify_admin_token():
     token = request.headers.get('x-admin-token')
     if not token:
-        token = os.environ.get('ADMIN_TOKEN')
-        return True
+        return False
         
     # 1. Check if token matches standard ADMIN_TOKEN env variable
     expected = os.environ.get('ADMIN_TOKEN')
