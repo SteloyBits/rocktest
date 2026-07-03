@@ -354,8 +354,8 @@
 
     let isSignUpMode = false;
 
-    function showError(text) {
-      errorMsg.textContent = text;
+    function showError(html) {
+      errorMsg.innerHTML = html;
       errorMsg.style.display = 'block';
     }
 
@@ -459,7 +459,17 @@
 
         window.location.href = 'index.html';
       } catch (err) {
-        showError(err.message || "Google Authentication failed.");
+        if (err.code === 'auth/unauthorized-domain') {
+          const currentHost = window.location.hostname;
+          if (currentHost === '127.0.0.1') {
+            const localhostUrl = window.location.href.replace('127.0.0.1', 'localhost');
+            showError(`Google Auth error: Domain not authorized. 127.0.0.1 is not authorized by default in Firebase.<br><br><a href="${localhostUrl}" style="color: #a5b4fc; text-decoration: underline; font-weight: 700; display: inline-block;">Click here to switch to localhost</a>`);
+          } else {
+            showError(`Google Auth error: Domain "${currentHost}" is not authorized. Please add it to your Firebase Console under Authentication > Settings > Authorized domains.`);
+          }
+        } else {
+          showError(err.message || "Google Authentication failed.");
+        }
         googleBtn.disabled = false;
       }
     });
