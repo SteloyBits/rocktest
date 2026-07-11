@@ -5,6 +5,7 @@ import random
 import string
 import re
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -75,14 +76,76 @@ def verify_admin_token(token):
 app = Flask(__name__, static_folder='..')
 CORS(app)
 
-def get_supabase_client():
-    SUPABASE_URL = os.environ.get('SUPABASE_URL')
-    SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
-    
-    if not SUPABASE_URL or not SUPABASE_KEY:
+# ---------------------------------------------------------------------------
+# Dual-Supabase client helpers
+#
+# Image storage was migrated between two Supabase projects:
+#   SUPABASE_URL / SUPABASE_KEY         → "legacy" project (stories/comments DB
+#                                           + all images uploaded BEFORE migration)
+#   NEW_SUPABASE_URL / NEW_SUPABASE_KEY → "primary" project (images uploaded
+#                                           AFTER migration only)
+#
+# Use get_legacy_client() for all database access (stories, comments).
+# Use get_primary_client() for storage ops on newly uploaded images.
+# Which project owns an image is determined by the hostname embedded in the
+# stored image_url — no extra DB column is needed.
+# ---------------------------------------------------------------------------
+
+def get_legacy_client():
+    """Supabase client for the legacy project (stories DB + pre-migration images)."""
+    url = os.environ.get('SUPABASE_URL')
+    key = os.environ.get('SUPABASE_KEY')
+    if not url or not key:
         raise ValueError("SUPABASE_URL and SUPABASE_KEY environment variables must be set")
-    
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    return create_client(url, key)
+
+# Backward-compat alias — existing callers of get_supabase_client() keep working.
+get_supabase_client = get_legacy_client
+
+def get_primary_client():
+    """Supabase client for the primary project (post-migration images)."""
+    url = os.environ.get('NEW_SUPABASE_URL')
+    key = os.environ.get('NEW_SUPABASE_KEY')
+    if not url or not key:
+        raise ValueError("NEW_SUPABASE_URL and NEW_SUPABASE_KEY environment variables must be set")
+    return create_client(url, key)
+
+# Backward-compat alias — existing callers of get_supabase_client_new() keep working.
+get_supabase_client_new = get_primary_client
+
+def _get_supabase_hosts():
+    """Return the bare hostnames of both Supabase projects (legacy, primary)."""
+    legacy_host = urlparse(os.environ.get('SUPABASE_URL', '')).hostname or ''
+    primary_host = urlparse(os.environ.get('NEW_SUPABASE_URL', '')).hostname or ''
+    return legacy_host, primary_host
+
+def download_image_from_supabase(bucket_name, file_path, preferred='legacy'):
+    """Download an image from Supabase storage with automatic cross-project fallback.
+
+    Args:
+        bucket_name: Storage bucket name.
+        file_path: File path within the bucket.
+        preferred: Which project to try first — 'legacy' or 'primary'.
+                   Callers should pass 'primary' when the stored image_url
+                   hostname matches the primary project, so we hit the right
+                   endpoint on the first attempt instead of wasting a round-trip.
+    """
+    if preferred == 'primary':
+        ordered = [('primary', get_primary_client), ('legacy', get_legacy_client)]
+    else:
+        ordered = [('legacy', get_legacy_client), ('primary', get_primary_client)]
+
+    last_exc = None
+    for label, client_fn in ordered:
+        try:
+            return client_fn().storage.from_(bucket_name).download(file_path)
+        except Exception as exc:
+            print(f"[image-router] Failed to download from {label} project: {exc}")
+            last_exc = exc
+
+    print(f"[image-router] Both Supabase endpoints failed for {bucket_name}/{file_path} — image may be orphaned.")
+    assert last_exc is not None  # loop always sets last_exc before reaching here
+    raise last_exc
 
 def generate_id():
     now_ms = int(time.time() * 1000)
@@ -129,7 +192,7 @@ def normalize_story(input_data):
         slug = re.sub(r'\s+', '-', slug)
         slug = re.sub(r'[^a-z0-9\-]', '', slug)
 
-    # now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     return {
         "id": generate_id(),
@@ -142,7 +205,8 @@ def normalize_story(input_data):
         "meta_description": meta_description,
         "category": category,
         "quality_score": quality_score,
-        "status": status
+        "status": status,
+        "created_at": now
     }
 
 def is_supabase_configured():
@@ -213,12 +277,40 @@ def normalize_comment(input_data):
 def serve_index():
     return send_from_directory('..', 'index.html')
 
+@app.route('/api/storage/<bucket_name>/<path:file_path>', methods=['GET'])
+def get_storage_image(bucket_name, file_path):
+    """Proxy endpoint for Supabase storage images with dual-project fallback.
+
+    Query params:
+        source: 'legacy' (default) or 'primary' — which Supabase project to try first.
+                The frontend passes this based on the hostname in the stored image_url.
+    """
+    try:
+        # Honour the caller's hint about which project owns this image so we
+        # avoid an unnecessary round-trip to the wrong endpoint.
+        source = request.args.get('source', 'legacy')
+        image_data = download_image_from_supabase(bucket_name, file_path, preferred=source)
+        ext = file_path.split('.')[-1].lower() if '.' in file_path else ''
+        content_type_map = {
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'svg': 'image/svg+xml'
+        }
+        content_type = content_type_map.get(ext, 'application/octet-stream')
+        return image_data, 200, {'Content-Type': content_type}
+    except Exception as e:
+        return jsonify({"error": str(e)}), 404
+
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({"ok": True})
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
+    legacy_host, primary_host = _get_supabase_hosts()
     return jsonify({
         "apiKey": os.environ.get('FIREBASE_API_KEY', ''),
         "authDomain": os.environ.get('FIREBASE_AUTH_DOMAIN', ''),
@@ -226,7 +318,15 @@ def get_config():
         "storageBucket": os.environ.get('FIREBASE_STORAGE_BUCKET', ''),
         "messagingSenderId": os.environ.get('FIREBASE_MESSAGING_SENDER_ID', ''),
         "appId": os.environ.get('FIREBASE_APP_ID', ''),
-        "measurementId": os.environ.get('FIREBASE_MEASUREMENT_ID', '')
+        "measurementId": os.environ.get('FIREBASE_MEASUREMENT_ID', ''),
+        # The frontend uses these hostnames to route images to the correct Supabase
+        # project and to implement onerror cross-project fallback in the browser.
+        # legacy = pre-migration images (SUPABASE_URL host)
+        # primary = post-migration images (NEW_SUPABASE_URL host)
+        "supabaseStorageHosts": {
+            "legacy": legacy_host,
+            "primary": primary_host
+        }
     })
 
 @app.route('/api/stories', methods=['GET'])

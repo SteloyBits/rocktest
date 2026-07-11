@@ -815,6 +815,75 @@
       console.error("Firebase Initialization Error:", e);
     }
 
+    // -------------------------------------------------------------------------
+    // Dual-Supabase image routing
+    //
+    // This site stores images across TWO Supabase projects because storage was
+    // migrated mid-project:
+    //   "legacy" project  → all images uploaded BEFORE the migration
+    //   "primary" project → all images uploaded AFTER the migration
+    //
+    // The stored image_url already contains the correct absolute URL including
+    // the project hostname, so we can identify ownership just by inspecting the
+    // host. If an image fails to load from its stored URL we automatically retry
+    // from the OTHER project before giving up, and log any unresolvable images
+    // so orphaned records can be identified.
+    //
+    // Project hostnames come from /api/config (never hardcoded here) so this
+    // logic stays correct if projects ever change.
+    // -------------------------------------------------------------------------
+
+    // Populated from the /api/config response; fallback to empty strings so the
+    // helpers degrade gracefully when the backend is unavailable.
+    const supabaseHosts = (firebaseConfig.supabaseStorageHosts) || { legacy: '', primary: '' };
+
+    /**
+     * Given a Supabase image URL, return the equivalent URL on the *other* project.
+     * Returns null when the URL doesn't match either known project host
+     * (e.g. an external CDN like Unsplash) — those pass through untouched.
+     */
+    function getAlternateProjectUrl(url) {
+      if (!url || !supabaseHosts.legacy || !supabaseHosts.primary) return null;
+      try {
+        const u = new URL(url);
+        if (u.hostname === supabaseHosts.legacy) {
+          return url.replace(supabaseHosts.legacy, supabaseHosts.primary);
+        }
+        if (u.hostname === supabaseHosts.primary) {
+          return url.replace(supabaseHosts.primary, supabaseHosts.legacy);
+        }
+      } catch (_) { /* unparseable URL — ignore */ }
+      return null;
+    }
+
+    /**
+     * Attach a one-shot onerror fallback to an <img> element.
+     * On first load failure, swaps src to the other Supabase project.
+     * On second failure, logs the orphaned record and stops retrying.
+     * @param {HTMLImageElement} imgEl
+     * @param {string} originalUrl - The value initially assigned to imgEl.src.
+     */
+    function attachImageFallback(imgEl, originalUrl) {
+      imgEl.onerror = function () {
+        const fallbackUrl = getAlternateProjectUrl(originalUrl);
+        if (fallbackUrl && imgEl.src !== fallbackUrl) {
+          console.warn('[image-router] Image failed from stored endpoint, retrying from alternate project:', fallbackUrl);
+          imgEl.src = fallbackUrl;
+          imgEl.onerror = function () {
+            // Both projects tried — log and stop so we don't loop.
+            console.error('[image-router] Both Supabase endpoints failed — record may be orphaned:', originalUrl);
+            imgEl.onerror = null;
+          };
+        } else {
+          // No alternate (external URL or hosts not configured) — just log.
+          if (originalUrl && originalUrl.includes('.supabase.co')) {
+            console.error('[image-router] Supabase image unresolvable (no alternate configured):', originalUrl);
+          }
+          imgEl.onerror = null;
+        }
+      };
+    }
+
     let cachedStories = null;
     const pendingCommentsByPath = new Map();
     const approvedCommentsByPath = new Map();
@@ -999,6 +1068,7 @@
       if (s.image_url) {
         img.src = s.image_url;
         img.alt = s.excerpt || s.headline || 'story image';
+        attachImageFallback(img, s.image_url);
       } else {
         img.alt = 'no image';
         img.style.display = 'none';
@@ -1068,6 +1138,9 @@
         img.decoding = 'async';
         img.src = story.image_url || 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1200&q=80';
         img.alt = story.headline || 'Featured story';
+        if (story.image_url) {
+          attachImageFallback(img, story.image_url);
+        }
 
         const overlay = document.createElement('div');
         overlay.className = 'carousel-overlay';
@@ -1229,6 +1302,7 @@
           img.src = s.image_url;
           img.alt = s.excerpt || s.headline || 'story image';
           img.style.display = '';
+          attachImageFallback(img, s.image_url);
         } else {
           img.removeAttribute('src');
           img.alt = '';

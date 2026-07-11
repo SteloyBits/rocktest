@@ -5,6 +5,7 @@ import random
 import string
 import re
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -43,12 +44,45 @@ try:
 except Exception as e:
     print(f"Failed to initialize Firebase Admin in Admin App: {e}")
 
-def get_supabase_client():
-    SUPABASE_URL = os.environ.get('SUPABASE_URL')
-    SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
-    if not SUPABASE_URL or not SUPABASE_KEY:
+# ---------------------------------------------------------------------------
+# Dual-Supabase client helpers
+#
+# Image storage was migrated between two Supabase projects:
+#   SUPABASE_URL / SUPABASE_KEY         → "legacy" project (stories/comments DB
+#                                           + all images uploaded BEFORE migration)
+#   NEW_SUPABASE_URL / NEW_SUPABASE_KEY → "primary" project (images uploaded
+#                                           AFTER migration only)
+#
+# All database access (stories, comments) uses get_legacy_client() because the
+# stories table lives in the legacy project. get_primary_client() is provided
+# for completeness and future storage operations on newly uploaded images.
+# Image project ownership is determined by the hostname in the stored image_url.
+# ---------------------------------------------------------------------------
+
+def get_legacy_client():
+    """Supabase client for the legacy project (stories DB + pre-migration images)."""
+    url = os.environ.get('SUPABASE_URL')
+    key = os.environ.get('SUPABASE_KEY')
+    if not url or not key:
         raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in env")
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    return create_client(url, key)
+
+# Backward-compat alias so existing admin endpoints keep working unchanged.
+get_supabase_client = get_legacy_client
+
+def get_primary_client():
+    """Supabase client for the primary project (post-migration images)."""
+    url = os.environ.get('NEW_SUPABASE_URL')
+    key = os.environ.get('NEW_SUPABASE_KEY')
+    if not url or not key:
+        raise ValueError("NEW_SUPABASE_URL and NEW_SUPABASE_KEY must be set in env")
+    return create_client(url, key)
+
+def _get_supabase_hosts():
+    """Return the bare hostnames of both Supabase projects (legacy, primary)."""
+    legacy_host = urlparse(os.environ.get('SUPABASE_URL', '')).hostname or ''
+    primary_host = urlparse(os.environ.get('NEW_SUPABASE_URL', '')).hostname or ''
+    return legacy_host, primary_host
 
 def is_firebase_configured():
     return firebase_client_configured and db is not None
@@ -216,7 +250,8 @@ def admin_create_story():
             "slug": slug,
             "category": data.get('category', 'General'),
             "quality_score": float(data['quality_score']) if data.get('quality_score') is not None else None,
-            "status": data.get('status', 'draft')
+            "status": data.get('status', 'draft'),
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
 
         response = supabase.table('stories').insert(story).execute()
