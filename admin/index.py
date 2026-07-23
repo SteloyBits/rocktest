@@ -425,4 +425,4 @@ def admin_reset_stories():
 if __name__ == '__main__':
     port = int(os.environ.get('ADMIN_PORT', 5001))
     print(f"Starting admin server on http://localhost:{port}")
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='127.0.0.1', port=port)

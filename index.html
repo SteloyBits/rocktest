@@ -160,6 +160,60 @@
       font-size: .75rem;
       font-weight: 600;
       letter-spacing: 0.01em;
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast), transform 0.1s;
+      text-decoration: none;
+    }
+
+    .chip:hover {
+      background: #e0e7ff;
+      color: var(--accent-color);
+      transform: translateY(-1px);
+    }
+
+    .chip:active {
+      transform: translateY(0);
+    }
+
+    /* Tag filter page heading */
+    .tag-filter-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .tag-filter-title {
+      margin: 0;
+      font-size: 1.75rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text-main);
+    }
+
+    .tag-filter-badge {
+      background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+      color: var(--accent-color);
+      border-radius: 999px;
+      padding: .3rem .9rem;
+      font-size: .85rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .tag-filter-back {
+      display: inline-flex;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      color: var(--accent-color);
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: color var(--transition-fast);
+    }
+
+    .tag-filter-back:hover {
+      color: var(--accent-hover);
     }
 
     .empty {
@@ -1056,6 +1110,79 @@
 
       return rawText;
     }
+    /**
+     * Normalise a tag string: lowercase + collapse whitespace.
+     * e.g. "Tech", "TECH", "tech " → "tech"
+     */
+    function normalizeTag(tag) {
+      if (typeof tag !== 'string') return '';
+      return tag.trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+
+    /**
+     * Reduce a normalised tag to a stem by stripping common English plural
+     * suffixes, so "interview" and "interviews" share the same stem.
+     *   "interviews" → "interview"
+     *   "categories" → "categori" (good enough for matching)
+     *   "boxes"      → "box"
+     *   "reviews"    → "review"
+     */
+    function stemTag(tag) {
+      const n = normalizeTag(tag);
+      if (n.endsWith('ies')) return n.slice(0, -3) + 'y';  // categories→category
+      if (n.endsWith('ves')) return n.slice(0, -3) + 'f';  // knives→knife
+      if (n.endsWith('es') && n.length > 3) return n.slice(0, -2); // boxes→box
+      if (n.endsWith('s') && n.length > 2)  return n.slice(0, -1); // reviews→review
+      return n;
+    }
+
+    /**
+     * Return true if two tag strings should be considered equivalent.
+     * Three levels of matching (applied symmetrically):
+     *  1. Exact normalised match       – "Tech" == "tech"
+     *  2. Stem match                   – "Interview" == "Interviews"
+     *  3. Whole-word containment       – "Review" ⊂ "Movie Review"
+     *     (every word of the shorter tag appears, in order, inside the longer)
+     */
+    function tagsMatch(a, b) {
+      const na = normalizeTag(a);
+      const nb = normalizeTag(b);
+      if (!na || !nb) return false;
+
+      // 1. Exact normalised
+      if (na === nb) return true;
+
+      // 2. Stem
+      const sa = stemTag(a);
+      const sb = stemTag(b);
+      if (sa && sb && sa === sb) return true;
+
+      // 3. Whole-word containment — check if every word of the shorter tag
+      //    appears as a whole word inside the longer tag.
+      const wordsA = na.split(' ');
+      const wordsB = nb.split(' ');
+      const [shorter, longer] = wordsA.length <= wordsB.length
+        ? [wordsA, nb]
+        : [wordsB, na];
+      // Build regex that checks each word of the shorter against the longer
+      const longerWords = longer.split(' ');
+      if (shorter.every(w => longerWords.includes(w))) return true;
+
+      return false;
+    }
+
+    /** Build a clickable tag chip anchor. */
+    function buildTagChip(tagText) {
+      const chip = document.createElement('a');
+      chip.className = 'chip';
+      chip.textContent = tagText;
+      const normed = normalizeTag(tagText);
+      chip.href = '#/tag/' + encodeURIComponent(normed);
+      // Stop click from propagating to the parent card anchor.
+      chip.addEventListener('click', (e) => e.stopPropagation());
+      return chip;
+    }
+
     function buildCard(s) {
       const a = document.createElement('a');
       a.href = '#/story/' + encodeURIComponent(s.slug || '');
@@ -1078,12 +1205,12 @@
       const h2 = document.createElement('div');
       h2.className = 'title';
       h2.textContent = s.headline || '';
-      const tags = document.createElement('div');
-      tags.className = 'tags';
+      const tagsWrap = document.createElement('div');
+      tagsWrap.className = 'tags';
       if (Array.isArray(s.tags) && s.tags.length > 0) {
-        tags.textContent = s.tags.join(' · ');
-      } else {
-        tags.textContent = '';
+        for (const t of s.tags) {
+          tagsWrap.appendChild(buildTagChip(t));
+        }
       }
       const excerpt = document.createElement('div');
       excerpt.className = 'excerpt';
@@ -1093,7 +1220,7 @@
       excerpt.textContent = ex;
       content.appendChild(h2);
       content.appendChild(excerpt);
-      content.appendChild(tags);
+      content.appendChild(tagsWrap);
       card.appendChild(img);
       card.appendChild(content);
       a.appendChild(card);
@@ -1288,13 +1415,14 @@
         if (!s) throw new Error('Not found');
         document.getElementById('d-title').textContent = s.headline || '';
         const tagsWrap = document.getElementById('d-tags');
-        tagsWrap.innerHTML = 'tags: ';
-        if (Array.isArray(s.tags)) {
+        tagsWrap.innerHTML = '';
+        if (Array.isArray(s.tags) && s.tags.length > 0) {
+          const label = document.createElement('span');
+          label.style.cssText = 'color:var(--text-muted);font-size:.85rem;margin-right:.4rem;';
+          label.textContent = 'tags:';
+          tagsWrap.appendChild(label);
           for (const t of s.tags) {
-            const el = document.createElement('span');
-            el.className = 'chip';
-            el.textContent = t;
-            tagsWrap.appendChild(el);
+            tagsWrap.appendChild(buildTagChip(t));
           }
         }
         const img = document.getElementById('d-image');
@@ -1352,12 +1480,87 @@
         location.hash = '#/';
       }
     }
+    async function loadTagFilter(tag) {
+      const list = document.getElementById('list');
+      const empty = document.getElementById('empty');
+      // Hide carousel for tag filter view
+      document.getElementById('carousel-container').style.display = 'none';
+
+      // Inject / refresh the filter header
+      let filterHeader = document.getElementById('tag-filter-header');
+      if (!filterHeader) {
+        filterHeader = document.createElement('div');
+        filterHeader.id = 'tag-filter-header';
+        filterHeader.className = 'tag-filter-header';
+        list.parentElement.insertBefore(filterHeader, list);
+      }
+      // Display tag with original casing — use the first story tag that fuzzy-matches,
+      // falling back to the raw URL value.
+      let displayTag = tag;
+      if (cachedStories) {
+        outer: for (const s of cachedStories) {
+          if (!Array.isArray(s.tags)) continue;
+          for (const t of s.tags) {
+            if (tagsMatch(t, tag)) { displayTag = t; break outer; }
+          }
+        }
+      }
+
+      filterHeader.innerHTML = `
+        <div style="width:100%">
+          <a class="tag-filter-back" href="#/">← All stories</a>
+          <div class="tag-filter-header">
+            <h2 class="tag-filter-title">Stories tagged</h2>
+            <span class="tag-filter-badge">${displayTag}</span>
+          </div>
+        </div>`;
+
+      list.innerHTML = '';
+      empty.hidden = true;
+
+      try {
+        if (!cachedStories) {
+          cachedStories = await fetchStoriesData();
+        }
+        const items = Array.isArray(cachedStories) ? cachedStories : [];
+        // Use fuzzy tagsMatch so singular/plural and word-containment variants
+        // (e.g. "Interview" / "Interviews", "Review" / "Movie Review") all merge.
+        const filtered = items.filter(s =>
+          Array.isArray(s.tags) && s.tags.some(t => tagsMatch(t, tag))
+        );
+        if (filtered.length === 0) {
+          empty.hidden = false;
+          empty.textContent = `No stories found for tag "${displayTag}".`;
+          return;
+        }
+        for (const s of filtered) {
+          list.appendChild(buildCard(s));
+        }
+      } catch (e) {
+        empty.hidden = false;
+        empty.textContent = 'Failed to load stories.';
+      }
+    }
+
     function router() {
       const hash = location.hash || '#/';
       if (hash.startsWith('#/story/')) {
         const slug = decodeURIComponent(hash.slice('#/story/'.length));
+        // Remove tag filter header if present
+        const fh = document.getElementById('tag-filter-header');
+        if (fh) fh.remove();
         loadStory(slug);
+      } else if (hash.startsWith('#/tag/')) {
+        const tag = decodeURIComponent(hash.slice('#/tag/'.length));
+        // Remove tag filter header so it gets rebuilt fresh
+        const fh = document.getElementById('tag-filter-header');
+        if (fh) fh.remove();
+        showListView();
+        loadTagFilter(tag);
       } else {
+        // Remove tag filter header when going back to home
+        const fh = document.getElementById('tag-filter-header');
+        if (fh) fh.remove();
         showListView();
         loadStories();
       }

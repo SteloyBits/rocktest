@@ -617,6 +617,170 @@ def reset_stories():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/admin/stats', methods=['GET'])
+def admin_get_stats():
+    try:
+        token = request.headers.get('x-admin-token')
+        if not verify_admin_token(token):
+            return jsonify({"error": "Forbidden"}), 403
+
+        supabase = get_supabase_client()
+
+        # Fetch stories for aggregation
+        stories_response = supabase.table('stories').select('quality_score, category').execute()
+        stories = stories_response.data or []
+        stories_count = len(stories)
+
+        quality_scores = [float(s['quality_score']) for s in stories if s.get('quality_score') is not None]
+        avg_quality = round(sum(quality_scores) / len(quality_scores), 1) if quality_scores else 0.0
+
+        categories = {}
+        for s in stories:
+            cat = s.get('category') or 'General'
+            categories[cat] = categories.get(cat, 0) + 1
+
+        comments_count = 0
+        pending_count = 0
+
+        if is_firebase_configured():
+            docs = db.collection('comments').stream()
+            for doc in docs:
+                comments_count += 1
+                d = doc.to_dict()
+                if not d.get('approved', False):
+                    pending_count += 1
+        elif is_supabase_configured():
+            resp_all = supabase.table('comments').select('approved').execute()
+            for c in (resp_all.data or []):
+                comments_count += 1
+                if not c.get('approved', False):
+                    pending_count += 1
+        else:
+            comments = load_local_comments()
+            comments_count = len(comments)
+            pending_count = len([c for c in comments if not c.get('approved', False)])
+
+        return jsonify({
+            "stories_count": stories_count,
+            "comments_count": comments_count,
+            "pending_comments_count": pending_count,
+            "average_quality_score": avg_quality,
+            "categories": categories
+        })
+    except Exception as e:
+        print(f"Error fetching admin stats: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/stories', methods=['GET'])
+def admin_get_stories():
+    try:
+        token = request.headers.get('x-admin-token')
+        if not verify_admin_token(token):
+            return jsonify({"error": "Forbidden"}), 403
+
+        supabase = get_supabase_client()
+        response = supabase.table('stories').select('*').order('created_at', desc=True).execute()
+        return jsonify(response.data or [])
+    except Exception as e:
+        print(f"Error fetching admin stories: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/stories', methods=['POST'])
+def admin_create_story():
+    try:
+        token = request.headers.get('x-admin-token')
+        if not verify_admin_token(token):
+            return jsonify({"error": "Forbidden"}), 403
+
+        supabase = get_supabase_client()
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
+
+        headline = data.get('headline')
+        body = data.get('body')
+        image_url = data.get('image_url')
+
+        if not headline or not body or not image_url:
+            return jsonify({"error": "Missing headline, body or image_url"}), 400
+
+        slug = data.get('slug')
+        if not slug:
+            slug = headline.lower()
+            slug = re.sub(r'\s+', '-', slug)
+            slug = re.sub(r'[^a-z0-9\-]', '', slug)
+
+        story = {
+            "id": generate_id(),
+            "headline": headline,
+            "body": body,
+            "excerpt": data.get('excerpt', ''),
+            "image_url": image_url,
+            "tags": data.get('tags', []),
+            "slug": slug,
+            "category": data.get('category', 'General'),
+            "quality_score": float(data['quality_score']) if data.get('quality_score') is not None else None,
+            "status": data.get('status', 'draft'),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        response = supabase.table('stories').insert(story).execute()
+        return jsonify(response.data[0]), 201
+    except Exception as e:
+        print(f"Error creating admin story: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/stories/<id>', methods=['PUT'])
+def admin_update_story(id):
+    try:
+        token = request.headers.get('x-admin-token')
+        if not verify_admin_token(token):
+            return jsonify({"error": "Forbidden"}), 403
+
+        supabase = get_supabase_client()
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
+
+        update_fields = {}
+        fields = ['headline', 'body', 'excerpt', 'image_url', 'category', 'tags', 'status', 'slug']
+        for f in fields:
+            if f in data:
+                update_fields[f] = data[f]
+
+        if 'quality_score' in data:
+            update_fields['quality_score'] = float(data['quality_score']) if data['quality_score'] is not None else None
+
+        response = supabase.table('stories').update(update_fields).eq('id', id).execute()
+        if not response.data:
+            response = supabase.table('stories').update(update_fields).eq('slug', id).execute()
+
+        return jsonify(response.data[0] if response.data else {"ok": True})
+    except Exception as e:
+        print(f"Error updating admin story: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/admin/stories/<id>', methods=['DELETE'])
+def admin_delete_story(id):
+    try:
+        token = request.headers.get('x-admin-token')
+        if not verify_admin_token(token):
+            return jsonify({"error": "Forbidden"}), 403
+
+        supabase = get_supabase_client()
+        response = supabase.table('stories').delete().eq('id', id).execute()
+        if not response.data:
+            response = supabase.table('stories').delete().eq('slug', id).execute()
+        return jsonify({"ok": True, "deleted": len(response.data) if response.data else 0})
+    except Exception as e:
+        print(f"Error deleting admin story: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/admin/normalize-tags', methods=['POST'])
 def admin_normalize_tags():
     try:
@@ -853,4 +1017,4 @@ def update_story(id):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='127.0.0.1', port=port)
