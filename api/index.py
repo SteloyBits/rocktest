@@ -444,6 +444,62 @@ def get_stories(top_n: int = None) -> dict:
         print(f"Error fetching stories: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/stories/search', methods=['GET'])
+def search_stories():
+    """Search stories by keyword across headline, excerpt, body, and tags.
+
+    Query params:
+        q (str): Required. The search keyword or phrase.
+        top_n (int): Optional. Maximum number of results to return.
+    """
+    try:
+        q = request.args.get('q', '').strip()
+        if not q:
+            return jsonify({"error": "Missing required query param: q"}), 400
+
+        top_n_param = request.args.get('top_n')
+        top_n = None
+        if top_n_param:
+            try:
+                top_n = int(top_n_param)
+            except ValueError:
+                pass
+
+        supabase = get_supabase_client()
+        response = supabase.table('stories').select('*').order('created_at', desc=True).execute()
+        stories = response.data or []
+
+        keyword = q.lower()
+
+        def relevance(story):
+            score = 0
+            if keyword in str(story.get('headline', '')).lower():
+                score += 3
+            if keyword in str(story.get('excerpt', '')).lower():
+                score += 2
+            if keyword in str(story.get('body', '')).lower():
+                score += 1
+            tags = story.get('tags') or []
+            if isinstance(tags, list):
+                for t in tags:
+                    if keyword in str(t).lower():
+                        score += 2
+                        break
+            return score
+
+        matched = [(s, relevance(s)) for s in stories if relevance(s) > 0]
+        matched.sort(key=lambda x: (-x[1], x[0].get('created_at') or ''), reverse=False)
+        results = [s for s, _ in matched]
+
+        if top_n is not None:
+            results = results[:top_n]
+
+        return jsonify(results)
+    except Exception as e:
+        print(f"Error searching stories: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/stories/<slug>', methods=['GET'])
 def get_story(slug):
     try:
