@@ -371,7 +371,7 @@ def get_stories(top_n: int = None) -> dict:
             for f in filters:
                 # try category match
                 try:
-                    q_cat = supabase.table('stories').select('*').eq('category', f)
+                    q_cat = supabase.table('stories_recovered').select('*').eq('category', f)
                     q_cat = q_cat.order('created_at', desc=True)
                     # fetch a reasonable batch
                     q_cat = q_cat.limit(top_n * 3 if top_n else 100)
@@ -386,7 +386,7 @@ def get_stories(top_n: int = None) -> dict:
 
                 # try tags contains (for text[] or json array column)
                 try:
-                    q_tags = supabase.table('stories').select('*').filter('tags', 'cs', [f])
+                    q_tags = supabase.table('stories_recovered').select('*').filter('tags', 'cs', [f])
                     q_tags = q_tags.order('created_at', desc=True)
                     q_tags = q_tags.limit(top_n * 3 if top_n else 100)
                     resp_tags = q_tags.execute()
@@ -466,7 +466,7 @@ def search_stories():
                 pass
 
         supabase = get_supabase_client()
-        response = supabase.table('stories').select('*').order('created_at', desc=True).execute()
+        response = supabase.table('stories_recovered').select('*').order('created_at', desc=True).execute()
         stories = response.data or []
 
         keyword = q.lower()
@@ -504,7 +504,7 @@ def search_stories():
 def get_story(slug):
     try:
         supabase = get_supabase_client()
-        response = supabase.table('stories').select('*').eq('slug', slug).execute()
+        response = supabase.table('stories_recovered').select('*').eq('slug', slug).execute()
         if not response.data:
             return jsonify({"error": "Not found"}), 404
         return jsonify(response.data[0])
