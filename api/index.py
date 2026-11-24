@@ -355,7 +355,7 @@ def get_stories(top_n: int = None) -> dict:
                 filters = [f for f in filters if f != 'popular']
 
         # Build initial query: order by created_at descending (LIFO)
-        query = supabase.table('stories').select('*').order('created_at', desc=True)
+        query = supabase.table('stories_recovered').select('*').order('created_at', desc=True)
 
         if top_n is not None:
             query = query.limit(top_n)
